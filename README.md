@@ -1,5 +1,9 @@
 # Freelens
 
+> **GPU Support (fork):** This fork adds GPU resource visibility to Freelens.
+> NVIDIA GPU allocation is displayed in the Node list (`allocated/total`), Pod list (per-pod GPU count),
+> and Cluster Overview (GPU donut chart). Also adds `Ctrl+`` to toggle the dock panel.
+
 <!-- markdownlint-disable MD013 -->
 
 [![Home](https://img.shields.io/badge/%F0%9F%8F%A0-freelens.app-02a7a0)](https://freelens.app)
