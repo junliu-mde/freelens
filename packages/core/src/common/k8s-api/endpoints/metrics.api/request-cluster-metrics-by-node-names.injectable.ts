@@ -26,6 +26,9 @@ export interface ClusterMetricData {
   podAllocatableCapacity: MetricData;
   fsSize: MetricData;
   fsUsage: MetricData;
+  gpuCapacity: MetricData;
+  gpuAllocatableCapacity: MetricData;
+  gpuRequests: MetricData;
 }
 
 export type RequestClusterMetricsByNodeNames = (
@@ -62,6 +65,9 @@ const requestClusterMetricsByNodeNamesInjectable = getInjectable({
           podAllocatableCapacity: opts,
           fsSize: opts,
           fsUsage: opts,
+          gpuCapacity: opts,
+          gpuAllocatableCapacity: opts,
+          gpuRequests: opts,
         },
         params,
       );
