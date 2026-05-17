@@ -51,6 +51,12 @@ export const getOperatorLikeQueryFor =
             return `sum(kube_node_status_capacity{node=~"${opts.nodes}", resource="pods"})`;
           case "podAllocatableCapacity":
             return `sum(kube_node_status_allocatable{node=~"${opts.nodes}", resource="pods"})`;
+          case "gpuCapacity":
+            return `sum(kube_node_status_capacity{node=~"${opts.nodes}", resource="nvidia_com_gpu"})`;
+          case "gpuAllocatableCapacity":
+            return `sum(kube_node_status_allocatable{node=~"${opts.nodes}", resource="nvidia_com_gpu"})`;
+          case "gpuRequests":
+            return `sum(kube_pod_container_resource_requests{node=~"${opts.nodes}", resource="nvidia_com_gpu"})`;
           case "fsSize":
             return `sum(node_filesystem_size_bytes{mountpoint=~"${opts.mountpoints}"} * on (pod,namespace) group_left(node) max without(pod_ip,host_ip) (kube_pod_info{node=~"${opts.nodes}"}))`;
           case "fsUsage":
