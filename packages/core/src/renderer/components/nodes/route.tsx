@@ -22,6 +22,7 @@ import { KubeObjectListLayout } from "../kube-object-list-layout";
 import { TabLayout } from "../layout/tab-layout-2";
 import { LineProgress } from "../line-progress";
 import { WithTooltip } from "../with-tooltip";
+import podStoreInjectable from "../workloads-pods/store.injectable";
 import nodeStoreInjectable from "./store.injectable";
 
 import type { Node } from "@freelensapp/kube-object";
@@ -31,6 +32,7 @@ import type {
   RequestAllNodeMetrics,
 } from "../../../common/k8s-api/endpoints/metrics.api/request-metrics-for-all-nodes.injectable";
 import type { EventStore } from "../events/store";
+import type { PodStore } from "../workloads-pods/store";
 import type { NodeStore } from "./store";
 
 enum columnId {
@@ -38,6 +40,7 @@ enum columnId {
   cpu = "cpu",
   memory = "memory",
   disk = "disk",
+  gpu = "gpu",
   taints = "taints",
   roles = "roles",
   version = "version",
@@ -58,10 +61,13 @@ interface UsageArgs {
   usageText?: string;
 }
 
+const GPU_RESOURCE_KEY = "nvidia.com/gpu";
+
 interface Dependencies {
   requestAllNodeMetrics: RequestAllNodeMetrics;
   nodeStore: NodeStore;
   eventStore: EventStore;
+  podStore: PodStore;
 }
 
 function bytesToUnitsAligned(bytes: number): string {
@@ -187,8 +193,49 @@ class NonInjectedNodesRoute extends React.Component<Dependencies> {
     });
   }
 
+  private getNodeGpuAllocated(node: Node): number {
+    const pods = this.props.podStore.getPodsByNode(node.getName());
+    let allocated = 0;
+
+    for (const pod of pods) {
+      const phase = pod.getStatusPhase();
+
+      if (phase !== "Running" && phase !== "Pending") {
+        continue;
+      }
+
+      for (const container of pod.getContainers()) {
+        const gpuRequest = container.resources?.requests?.[GPU_RESOURCE_KEY];
+
+        if (gpuRequest) {
+          allocated += parseInt(gpuRequest, 10) || 0;
+        }
+      }
+    }
+
+    return allocated;
+  }
+
+  renderGpuUsage(node: Node) {
+    const allocatable = node.status?.allocatable?.[GPU_RESOURCE_KEY];
+
+    if (!allocatable) {
+      return <span>-</span>;
+    }
+
+    const capacity = parseInt(allocatable, 10) || 0;
+
+    if (capacity === 0) {
+      return <span>-</span>;
+    }
+
+    const allocated = this.getNodeGpuAllocated(node);
+
+    return <span>{`${allocated}/${capacity}`}</span>;
+  }
+
   render() {
-    const { nodeStore, eventStore } = this.props;
+    const { nodeStore, eventStore, podStore } = this.props;
 
     return (
       <TabLayout>
@@ -198,13 +245,14 @@ class NonInjectedNodesRoute extends React.Component<Dependencies> {
           className="Nodes"
           store={nodeStore}
           isReady={nodeStore.isLoaded}
-          dependentStores={[eventStore]}
+          dependentStores={[eventStore, podStore]}
           isSelectable={false}
           sortingCallbacks={{
             [columnId.name]: (node) => node.getName(),
             [columnId.cpu]: (node) => this.getLastMetricValues(node, ["cpuUsage"]),
             [columnId.memory]: (node) => this.getLastMetricValues(node, ["memoryUsage"]),
             [columnId.disk]: (node) => this.getLastMetricValues(node, ["fsUsage"]),
+            [columnId.gpu]: (node) => this.getNodeGpuAllocated(node),
             [columnId.taints]: (node) => node.getTaints().length,
             [columnId.roles]: (node) => node.getRoleLabels(),
             [columnId.version]: (node) => node.getKubeletVersion(),
@@ -227,6 +275,7 @@ class NonInjectedNodesRoute extends React.Component<Dependencies> {
             { title: "CPU", className: "cpu", sortBy: columnId.cpu, id: columnId.cpu },
             { title: "Memory", className: "memory", sortBy: columnId.memory, id: columnId.memory },
             { title: "Disk", className: "disk", sortBy: columnId.disk, id: columnId.disk },
+            { title: "GPU", className: "gpu", sortBy: columnId.gpu, id: columnId.gpu },
             { title: "Roles", className: "roles", sortBy: columnId.roles, id: columnId.roles },
             { title: "Taints", className: "taints", sortBy: columnId.taints, id: columnId.taints },
             { title: "Version", className: "version", sortBy: columnId.version, id: columnId.version },
@@ -249,6 +298,7 @@ class NonInjectedNodesRoute extends React.Component<Dependencies> {
               this.renderCpuUsage(node),
               this.renderMemoryUsage(node),
               this.renderDiskUsage(node),
+              this.renderGpuUsage(node),
               <WithTooltip>{node.getRoleLabels()}</WithTooltip>,
               <>
                 <span id={tooltipId}>{taints.length}</span>
@@ -275,5 +325,6 @@ export const NodesRoute = withInjectables<Dependencies>(NonInjectedNodesRoute, {
     nodeStore: di.inject(nodeStoreInjectable),
     eventStore: di.inject(eventStoreInjectable),
     requestAllNodeMetrics: di.inject(requestAllNodeMetricsInjectable),
+    podStore: di.inject(podStoreInjectable),
   }),
 });

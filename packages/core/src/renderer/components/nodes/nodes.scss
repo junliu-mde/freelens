@@ -65,6 +65,12 @@
       }
     }
 
+    &.gpu {
+      flex: 0.5;
+      align-self: center;
+      justify-content: center;
+    }
+
     &.schedulable {
       flex: 0.6;
     }
