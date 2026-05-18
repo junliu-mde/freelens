@@ -190,6 +190,14 @@ const userPreferenceDescriptorsInjectable = getInjectable({
           },
         toStore: (val) => (val.location === defaultExtensionRegistryUrlLocation ? undefined : val),
       }),
+      tableColumnOrder: getPreferenceDescriptor<[string, string[]][], Map<string, string[]>>({
+        fromStore: (val = []) => new Map(val),
+        toStore: (val) => {
+          const res = Array.from(val);
+
+          return res.length ? res : undefined;
+        },
+      }),
       clusterPageMenuOrder: getPreferenceDescriptor<ClusterPageMenuOrder | undefined>({
         fromStore: (val) => val,
         toStore: (val) => val,

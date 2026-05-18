@@ -51,6 +51,9 @@ const baseProps: ItemListLayoutContentProps<ItemObject, boolean> & {
   openConfirmDialog: any;
   toggleTableColumnVisibility: any;
   isTableColumnHidden: any;
+  getTableColumnOrder: any;
+  setTableColumnOrder: any;
+  resetTableColumnOrder: any;
   store: StubStore;
 } = {
   getFilters: () => [],
@@ -78,6 +81,9 @@ const baseProps: ItemListLayoutContentProps<ItemObject, boolean> & {
   openConfirmDialog: jest.fn(),
   toggleTableColumnVisibility: jest.fn(),
   isTableColumnHidden: jest.fn(),
+  getTableColumnOrder: jest.fn(),
+  setTableColumnOrder: jest.fn(),
+  resetTableColumnOrder: jest.fn(),
   copyClassNameFromHeadCells: false,
   isConfigurable: false,
 };
