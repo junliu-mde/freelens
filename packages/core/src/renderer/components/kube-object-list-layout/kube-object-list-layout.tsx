@@ -15,6 +15,7 @@ import { sortBy } from "lodash";
 import { computed, observable, reaction } from "mobx";
 import { disposeOnUnmount, observer } from "mobx-react";
 import React from "react";
+import { getTableColumnOrderInjectable } from "../../../features/user-preferences/common/table-column-order.injectable";
 import clusterFrameContextForNamespacedResourcesInjectable from "../../cluster-frame-context/for-namespaced-resources.injectable";
 import subscribeStoresInjectable from "../../kube-watch-api/subscribe-stores.injectable";
 import { ResourceKindMap, ResourceNames } from "../../utils/rbac";
@@ -30,6 +31,7 @@ import type { KubeJsonApiDataFor, KubeObject } from "@freelensapp/kube-object";
 import type { GeneralKubeObjectListLayoutColumn, SpecificKubeListLayoutColumn } from "@freelensapp/list-layout";
 import type { Disposer } from "@freelensapp/utilities";
 
+import type { GetTableColumnOrder } from "../../../features/user-preferences/common/table-column-order.injectable";
 import type { ClusterContext } from "../../cluster-frame-context/cluster-frame-context";
 import type { SubscribableStore, SubscribeStores } from "../../kube-watch-api/kube-watch-api";
 import type { PageParam } from "../../navigation/page-param";
@@ -67,6 +69,7 @@ interface Dependencies {
   kubeSelectedUrlParam: PageParam<string>;
   toggleKubeDetailsPane: ToggleKubeDetailsPane;
   generalColumns: GeneralKubeObjectListLayoutColumn[];
+  getTableColumnOrder: GetTableColumnOrder;
 }
 
 const matchesApiFor = (api: SubscribableStore["api"]) => (column: GeneralKubeObjectListLayoutColumn) =>
@@ -178,6 +181,8 @@ class NonInjectedKubeObjectListLayout<
     } = this.props;
     const resourceName = this.props.resourceName || ResourceNames[ResourceKindMap[store.api.kind]] || store.api.kind;
     const targetColumns = [...(columns ?? []), ...generalColumns.filter(matchesApiFor(store.api))];
+    const { tableId } = layoutProps;
+    const customOrder = tableId ? this.props.getTableColumnOrder(tableId) : undefined;
 
     void items;
     void dependentStores;
@@ -188,10 +193,29 @@ class NonInjectedKubeObjectListLayout<
       }
     });
 
-    const headers = sortBy(
-      [...(renderTableHeader || []).map((header, index) => ({ priority: 20 - index, header })), ...targetColumns],
-      (v) => -v.priority,
-    ).map((col) => col.header);
+    const sortColumns = <T extends { priority: number; header?: { id?: string } | null }>(cols: T[]): T[] => {
+      if (customOrder) {
+        return [...cols].sort((a, b) => {
+          const aId = a.header?.id;
+          const bId = b.header?.id;
+          const aIdx = aId ? customOrder.indexOf(aId) : -1;
+          const bIdx = bId ? customOrder.indexOf(bId) : -1;
+
+          if (aIdx >= 0 && bIdx >= 0) return aIdx - bIdx;
+          if (aIdx >= 0) return -1;
+          if (bIdx >= 0) return 1;
+
+          return b.priority - a.priority;
+        });
+      }
+
+      return sortBy(cols, (v) => -v.priority);
+    };
+
+    const headers = sortColumns([
+      ...(renderTableHeader || []).map((header, index) => ({ priority: 20 - index, header })),
+      ...targetColumns,
+    ]).map((col) => col.header);
 
     const getTableRowCustomizations = (item: K) => {
       const id = `menu-actions-for-kube-object-menu-for-${item.getId()}`;
@@ -270,13 +294,18 @@ class NonInjectedKubeObjectListLayout<
         sortingCallbacks={sortingCallbacks}
         renderTableHeader={headers}
         renderTableContents={(item) =>
-          sortBy(
-            [
-              ...renderTableContents(item).map((content, index) => ({ priority: 20 - index, content })),
-              ...targetColumns.map((col) => ({ priority: col.priority, content: col.content(item) })),
-            ],
-            (item) => -item.priority,
-          ).map((value) => value.content)
+          sortColumns([
+            ...renderTableContents(item).map((content, index) => ({
+              priority: 20 - index,
+              content,
+              header: { id: renderTableHeader?.[index]?.id },
+            })),
+            ...targetColumns.map((col) => ({
+              priority: col.priority,
+              content: col.content(item),
+              header: { id: col.header?.id },
+            })),
+          ]).map((value) => value.content)
         }
         spinnerTestId="kube-object-list-layout-spinner"
         {...layoutProps}
@@ -301,6 +330,7 @@ export const KubeObjectListLayout = withInjectables<
     kubeSelectedUrlParam: di.inject(kubeSelectedUrlParamInjectable),
     toggleKubeDetailsPane: di.inject(toggleKubeDetailsPaneInjectable),
     generalColumns: di.injectMany(kubeObjectListLayoutColumnInjectionToken),
+    getTableColumnOrder: di.inject(getTableColumnOrderInjectable),
   }),
 }) as <K extends KubeObject, A extends KubeApi<K, D>, D extends KubeJsonApiDataFor<K> = KubeJsonApiDataFor<K>>(
   props: KubeObjectListLayoutProps<K, A, D>,

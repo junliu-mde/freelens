@@ -43,8 +43,16 @@
       }
     }
 
+    &.gpu {
+      flex-grow: 0.3;
+    }
+
     &.restarts {
       flex-grow: 0.3;
+    }
+
+    &.owners {
+      flex-grow: 0.8;
     }
 
     &.warning {

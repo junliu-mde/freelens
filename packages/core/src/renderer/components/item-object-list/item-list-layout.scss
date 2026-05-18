@@ -53,4 +53,43 @@
     --checkbox-color: inherit;
     color: var(--checkbox-color);
   }
+
+  .column-order-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+
+    .drag-handle {
+      cursor: grab;
+      display: flex;
+      align-items: center;
+      opacity: 0.5;
+      touch-action: none;
+
+      &:hover {
+        opacity: 1;
+      }
+    }
+
+    &.drag-overlay {
+      background: var(--mainBackground);
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      padding: 4px 8px;
+    }
+  }
+
+  .reset-order {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-top: 1px solid var(--borderFaintColor);
+    margin-top: 4px;
+    padding-top: 4px;
+    opacity: 0.7;
+
+    &:hover {
+      opacity: 1;
+    }
+  }
 }

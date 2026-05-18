@@ -6,14 +6,23 @@
 
 import "./item-list-layout.scss";
 
+import { closestCenter, DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { Icon } from "@freelensapp/icon";
 import { Spinner } from "@freelensapp/spinner";
 import { cssNames, isDefined, isReactNode, noop, prevDefault, stopPropagation } from "@freelensapp/utilities";
 import { withInjectables } from "@ogre-tools/injectable-react";
 import autoBindReact from "auto-bind/react";
 import { action, computed, makeObservable, observable } from "mobx";
 import { Observer, observer } from "mobx-react";
-import React from "react";
+import React, { useCallback, useState } from "react";
 import isTableColumnHiddenInjectable from "../../../features/user-preferences/common/is-table-column-hidden.injectable";
+import resetTableColumnOrderInjectable from "../../../features/user-preferences/common/reset-table-column-order.injectable";
+import {
+  getTableColumnOrderInjectable,
+  setTableColumnOrderInjectable,
+} from "../../../features/user-preferences/common/table-column-order.injectable";
 import toggleTableColumnVisibilityInjectable from "../../../features/user-preferences/common/toggle-table-column-visibility.injectable";
 import activeThemeInjectable from "../../themes/active.injectable";
 import { AddRemoveButtons } from "../add-remove-buttons";
@@ -29,9 +38,15 @@ import pageFiltersStoreInjectable from "./page-filters/store.injectable";
 import type { ItemObject, TableCellProps } from "@freelensapp/list-layout";
 import type { IClassName, StrictReactNode } from "@freelensapp/utilities";
 
+import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import type { IComputedValue } from "mobx";
 
 import type { IsTableColumnHidden } from "../../../features/user-preferences/common/is-table-column-hidden.injectable";
+import type { ResetTableColumnOrder } from "../../../features/user-preferences/common/reset-table-column-order.injectable";
+import type {
+  GetTableColumnOrder,
+  SetTableColumnOrder,
+} from "../../../features/user-preferences/common/table-column-order.injectable";
 import type { ToggleTableColumnVisibility } from "../../../features/user-preferences/common/toggle-table-column-visibility.injectable";
 import type { LensTheme } from "../../themes/lens-theme";
 import type { StorageLayer } from "../../utils/storage-helper";
@@ -95,6 +110,9 @@ interface Dependencies {
   toggleTableColumnVisibility: ToggleTableColumnVisibility;
   isTableColumnHidden: IsTableColumnHidden;
   columnResizeStorage: StorageLayer<ColumnResizeStorageState>;
+  getTableColumnOrder: GetTableColumnOrder;
+  setTableColumnOrder: SetTableColumnOrder;
+  resetTableColumnOrder: ResetTableColumnOrder;
 }
 
 @observer
@@ -575,6 +593,10 @@ export class NonInjectedItemListLayoutContent<
 
   renderColumnVisibilityMenu(tableId: string) {
     const { renderTableHeader = [] } = this.props;
+    const configurableColumns = renderTableHeader
+      .filter(isDefined)
+      .filter((props): props is TableCellProps & { id: string } => !!props.id)
+      .filter((props) => !props.showWithColumn);
 
     return (
       <MenuActions
@@ -583,22 +605,149 @@ export class NonInjectedItemListLayoutContent<
         toolbar={false}
         autoCloseOnSelect={false}
       >
-        {renderTableHeader
-          .filter(isDefined)
-          .filter((props): props is TableCellProps & { id: string } => !!props.id)
-          .filter((props) => !props.showWithColumn)
-          .map((cellProps) => (
-            <MenuItem key={cellProps.id} className="input">
-              <Checkbox
-                label={cellProps.title ?? `<${cellProps.className}>`}
-                value={this.showColumn(cellProps)}
-                onChange={() => this.props.toggleTableColumnVisibility(tableId, cellProps.id)}
-              />
-            </MenuItem>
-          ))}
+        <ColumnOrderMenu
+          tableId={tableId}
+          columns={configurableColumns}
+          showColumn={(cellProps) => this.showColumn(cellProps)}
+          toggleVisibility={(columnId) => this.props.toggleTableColumnVisibility(tableId, columnId)}
+          getColumnOrder={this.props.getTableColumnOrder}
+          setColumnOrder={this.props.setTableColumnOrder}
+          resetColumnOrder={this.props.resetTableColumnOrder}
+        />
       </MenuActions>
     );
   }
+}
+
+interface SortableColumnItemProps {
+  id: string;
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+}
+
+function SortableColumnItem({ id, label, checked, onToggle }: SortableColumnItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      <MenuItem className="input column-order-item">
+        <span className="drag-handle" {...listeners}>
+          <Icon material="drag_indicator" smallest />
+        </span>
+        <Checkbox label={label} value={checked} onChange={onToggle} />
+      </MenuItem>
+    </div>
+  );
+}
+
+interface ColumnOrderMenuProps {
+  tableId: string;
+  columns: (TableCellProps & { id: string })[];
+  showColumn: (cellProps: TableCellProps) => boolean;
+  toggleVisibility: (columnId: string) => void;
+  getColumnOrder: GetTableColumnOrder;
+  setColumnOrder: SetTableColumnOrder;
+  resetColumnOrder: ResetTableColumnOrder;
+}
+
+function ColumnOrderMenu({
+  tableId,
+  columns,
+  showColumn,
+  toggleVisibility,
+  getColumnOrder,
+  setColumnOrder,
+  resetColumnOrder,
+}: ColumnOrderMenuProps) {
+  const savedOrder = getColumnOrder(tableId);
+  const orderedColumns = savedOrder
+    ? [
+        ...savedOrder.filter((id) => columns.some((c) => c.id === id)).map((id) => columns.find((c) => c.id === id)!),
+        ...columns.filter((c) => !savedOrder.includes(c.id)),
+      ]
+    : columns;
+
+  const columnIds = orderedColumns.map((c) => c.id);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  }, []);
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      setActiveId(null);
+      const { active, over } = event;
+
+      if (!over || active.id === over.id) return;
+
+      const oldIndex = columnIds.indexOf(active.id as string);
+      const newIndex = columnIds.indexOf(over.id as string);
+      const newOrder = [...columnIds];
+      const [moved] = newOrder.splice(oldIndex, 1);
+
+      newOrder.splice(newIndex, 0, moved);
+      setColumnOrder(tableId, newOrder);
+    },
+    [columnIds, tableId, setColumnOrder],
+  );
+
+  const handleReset = useCallback(() => {
+    resetColumnOrder(tableId);
+  }, [tableId, resetColumnOrder]);
+
+  const activeColumn = activeId ? orderedColumns.find((c) => c.id === activeId) : null;
+
+  return (
+    <>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext items={columnIds} strategy={verticalListSortingStrategy}>
+          {orderedColumns.map((cellProps) => (
+            <SortableColumnItem
+              key={cellProps.id}
+              id={cellProps.id}
+              label={cellProps.title?.toString() ?? `<${cellProps.className}>`}
+              checked={showColumn(cellProps)}
+              onToggle={() => toggleVisibility(cellProps.id)}
+            />
+          ))}
+        </SortableContext>
+        <DragOverlay>
+          {activeColumn && (
+            <MenuItem className="input column-order-item drag-overlay">
+              <span className="drag-handle">
+                <Icon material="drag_indicator" smallest />
+              </span>
+              <Checkbox
+                label={activeColumn.title?.toString() ?? `<${activeColumn.className}>`}
+                value={showColumn(activeColumn)}
+              />
+            </MenuItem>
+          )}
+        </DragOverlay>
+      </DndContext>
+      {savedOrder && (
+        <MenuItem className="input reset-order" onClick={handleReset}>
+          <Icon material="restart_alt" smallest />
+          <span>Reset to Default</span>
+        </MenuItem>
+      )}
+    </>
+  );
 }
 
 export const ItemListLayoutContent = withInjectables<Dependencies, ItemListLayoutContentProps<ItemObject, boolean>>(
@@ -612,6 +761,9 @@ export const ItemListLayoutContent = withInjectables<Dependencies, ItemListLayou
       toggleTableColumnVisibility: di.inject(toggleTableColumnVisibilityInjectable),
       isTableColumnHidden: di.inject(isTableColumnHiddenInjectable),
       columnResizeStorage: di.inject(columnResizeStorageInjectable),
+      getTableColumnOrder: di.inject(getTableColumnOrderInjectable),
+      setTableColumnOrder: di.inject(setTableColumnOrderInjectable),
+      resetTableColumnOrder: di.inject(resetTableColumnOrderInjectable),
     }),
   },
 ) as <Item extends ItemObject, PreLoadStores extends boolean>(
