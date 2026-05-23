@@ -63,6 +63,9 @@ const renderMarkdown = (markdown: string) => ({
 @observer
 class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependencies> {
   private readonly messagesEndRef = React.createRef<HTMLDivElement>();
+  private sessionMenuRef = React.createRef<HTMLDivElement>();
+
+  state = { sessionMenuOpen: false };
 
   componentDidMount() {
     this.props.aiAgentTabStore.initTab(this.props.tabId);
@@ -72,6 +75,17 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
   componentDidUpdate() {
     this.scrollToBottom();
   }
+
+  componentWillUnmount() {
+    document.removeEventListener("click", this.onDocumentClick);
+  }
+
+  private onDocumentClick = (evt: MouseEvent) => {
+    if (this.sessionMenuRef.current && !this.sessionMenuRef.current.contains(evt.target as Node)) {
+      this.setState({ sessionMenuOpen: false });
+      document.removeEventListener("click", this.onDocumentClick);
+    }
+  };
 
   get data() {
     return this.props.aiAgentTabStore.initTab(this.props.tabId);
@@ -113,6 +127,7 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
 
     aiAgentTabStore.appendUserMessage(this.props.tabId, text);
     aiAgentTabStore.startAssistantMessage(this.props.tabId, runId);
+    aiAgentTabStore.autoSaveSession(this.props.tabId);
 
     const messages = aiAgentTabStore
       .initTab(this.props.tabId)
@@ -146,10 +161,34 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
 
     this.props.abortAiAgentMessage(this.props.tabId, activeRunId);
     this.props.aiAgentTabStore.finishRun(this.props.tabId, activeRunId, "aborted");
+    this.props.aiAgentTabStore.autoSaveSession(this.props.tabId);
   };
 
-  private clear = () => {
-    this.props.aiAgentTabStore.clear(this.props.tabId);
+  private newSession = () => {
+    this.props.aiAgentTabStore.newSession(this.props.tabId);
+  };
+
+  private toggleSessionMenu = () => {
+    const isOpen = !this.state.sessionMenuOpen;
+
+    this.setState({ sessionMenuOpen: isOpen });
+
+    if (isOpen) {
+      document.addEventListener("click", this.onDocumentClick);
+    } else {
+      document.removeEventListener("click", this.onDocumentClick);
+    }
+  };
+
+  private switchSession = (sessionId: string) => {
+    this.props.aiAgentTabStore.switchToSession(this.props.tabId, sessionId);
+    this.setState({ sessionMenuOpen: false });
+    document.removeEventListener("click", this.onDocumentClick);
+  };
+
+  private deleteSession = (evt: React.MouseEvent, sessionId: string) => {
+    evt.stopPropagation();
+    this.props.aiAgentTabStore.deleteSession(sessionId);
   };
 
   private renderParts = (parts: AiAgentMessagePart[]) => {
@@ -285,6 +324,39 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
     }
   };
 
+  private getCurrentSessionTitle = (): string => {
+    const { messages } = this.data;
+
+    if (!messages.length) return "New session";
+
+    const firstUser = messages.find((m) => m.role === "user");
+
+    if (firstUser) {
+      const text = firstUser.parts
+        .filter((p): p is Extract<AiAgentMessagePart, { type: "text" }> => p.type === "text")
+        .map((p) => p.text)
+        .join(" ")
+        .trim();
+
+      if (text) {
+        return text.length > 30 ? `${text.slice(0, 27)}…` : text;
+      }
+    }
+
+    return "New session";
+  };
+
+  private formatSessionTime = (timestamp: number): string => {
+    const now = Date.now();
+    const diff = now - timestamp;
+
+    if (diff < 60_000) return "just now";
+    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+    if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+
+    return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  };
+
   private renderMessage = (message: AiAgentMessage) => {
     const isUser = message.role === "user";
     const text = getTextFromMessage(message);
@@ -308,17 +380,55 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
 
   render() {
     const { inputDraft, messages } = this.data;
+    const sessions = this.props.aiAgentTabStore.getSessionsForCluster(this.data.clusterId);
+    const sessionTitle = this.getCurrentSessionTitle();
 
     return (
       <div className="AiAgent flex column">
         <div className="AiAgentToolbar flex gaps align-center">
           <Icon small material="terminal" />
-          <span className="toolbar-title">AI Agent Terminal</span>
+          <span className="toolbar-title">{sessionTitle}</span>
           {this.data.clusterId ? <span className="toolbar-cluster">{this.data.clusterId.slice(0, 8)}</span> : null}
           <span className="toolbar-status">{this.isStreaming ? "running" : "ready"}</span>
           <div className="box grow" />
           {this.isStreaming ? <Icon material="stop_circle" tooltip="Stop" onClick={this.stop} /> : null}
-          {messages.length > 0 ? <Icon material="delete_sweep" tooltip="Clear chat" onClick={this.clear} /> : null}
+          <div className="session-switcher" ref={this.sessionMenuRef}>
+            <Icon material="history" tooltip="Sessions" onClick={this.toggleSessionMenu} />
+            {this.state.sessionMenuOpen ? (
+              <div className="session-menu">
+                <div className="session-menu-header">
+                  <span>Sessions</span>
+                  <Icon small material="add" tooltip="New session" onClick={this.newSession} />
+                </div>
+                <div className="session-menu-list">
+                  {sessions.length === 0 ? (
+                    <div className="session-menu-empty">No previous sessions</div>
+                  ) : (
+                    sessions.map((session) => (
+                      <div
+                        key={session.id}
+                        className={cssNames("session-menu-item", { active: session.id === this.data.sessionId })}
+                        onClick={() => this.switchSession(session.id)}
+                      >
+                        <div className="session-item-title">{session.title}</div>
+                        <div className="session-item-meta">
+                          {this.formatSessionTime(session.updatedAt)} ·{" "}
+                          {session.messages.filter((m) => m.role === "user").length} turns
+                        </div>
+                        <Icon
+                          small
+                          material="close"
+                          className="session-item-delete"
+                          onClick={(evt) => this.deleteSession(evt, session.id)}
+                        />
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+          <Icon material="add_circle_outline" tooltip="New session" onClick={this.newSession} />
         </div>
 
         <div className="AiAgentMessages flex column box grow">
