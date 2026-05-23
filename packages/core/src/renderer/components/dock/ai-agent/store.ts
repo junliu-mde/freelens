@@ -4,9 +4,12 @@
  * Licensed under MIT License. See LICENSE in root directory for more information.
  */
 
+import { observable, reaction } from "mobx";
+
 import { DockTabStore } from "../dock-tab-store/dock-tab.store";
 
 import type { DockTabStoreDependencies } from "../dock-tab-store/dock-tab.store";
+import type { StorageLayer } from "../../../utils/storage-helper";
 import type { TabId } from "../dock/store";
 
 export type AiAgentMessageRole = "user" | "assistant";
@@ -67,17 +70,52 @@ export interface AiAgentTabData {
   status: AiAgentRunStatus;
   activeRunId?: string;
   clusterId?: string;
+  sessionId: string;
+}
+
+export interface AiAgentSession {
+  id: string;
+  title: string;
+  messages: AiAgentMessage[];
+  clusterId?: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface AiAgentTabStoreDependencies extends DockTabStoreDependencies {}
 
 type MutableAiAgentMessagePart = AiAgentMessagePart;
 
+export interface AiAgentSessionsStorage {
+  sessions: Record<string, AiAgentSession>;
+}
+
 export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
+  private readonly sessions = observable.map<string, AiAgentSession>();
+  private sessionsStorage?: StorageLayer<AiAgentSessionsStorage>;
+
   constructor(protected readonly dependencies: AiAgentTabStoreDependencies) {
     super(dependencies, {
       storageKey: "ai_agent",
     });
+
+    // Create a separate storage for sessions
+    this.sessionsStorage = this.dependencies.createStorage("ai_agent_sessions", { sessions: {} });
+
+    // Load sessions from storage
+    const stored = this.sessionsStorage.get().sessions;
+
+    for (const [id, session] of Object.entries(stored)) {
+      this.sessions.set(id, session);
+    }
+
+    // Persist sessions on change
+    reaction(
+      () => this.sessionsToJSON(),
+      (data) => {
+        this.sessionsStorage?.set({ sessions: data });
+      },
+    );
   }
 
   protected finalizeDataForSave(data: AiAgentTabData): AiAgentTabData {
@@ -99,14 +137,17 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
       return existingData;
     }
 
+    const sessionId = crypto.randomUUID();
     const data: AiAgentTabData = {
       inputDraft: "",
       messages: [],
       status: "idle",
       clusterId: undefined,
+      sessionId,
     };
 
     this.setData(tabId, data);
+    this.saveSession(tabId, sessionId, data.messages, data.clusterId);
 
     return data;
   }
@@ -313,11 +354,18 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
   clear(tabId: TabId): void {
     const data = this.initTab(tabId);
 
+    // Save current session before clearing
+    this.saveSession(tabId, data.sessionId, data.messages, data.clusterId);
+
+    // Start a new session
+    const sessionId = crypto.randomUUID();
+
     this.setData(tabId, {
       inputDraft: "",
       messages: [],
       status: "idle",
       clusterId: data.clusterId,
+      sessionId,
     });
   }
 
