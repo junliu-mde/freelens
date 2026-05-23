@@ -153,6 +153,8 @@ class NonInjectedDock extends React.Component<DockProps & Dependencies> {
     const { className, dockStore } = this.props;
     const { isOpen, toggle, tabs, toggleFillSize, selectedTab, hasTabs, fullSize } = this.props.dockStore;
 
+    if (!hasTabs() && !isOpen) return null;
+
     return (
       <div className={cssNames("Dock", className, { isOpen, fullSize })} ref={this.element} tabIndex={-1}>
         <ResizingAnchor
