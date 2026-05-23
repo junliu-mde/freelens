@@ -27,7 +27,8 @@ const kubeObjectMenuItemsInjectable = getInjectable({
         filter(
           (item) =>
             (item.kind === "*" || item.kind === kubeObject?.kind) &&
-            (item.apiVersions.includes("*") || item.apiVersions.includes(kubeObject?.apiVersion)) &&
+            (item.apiVersions.includes("*") ||
+              (kubeObject?.apiVersion && item.apiVersions.includes(kubeObject.apiVersion))) &&
             item.enabled.get(),
         ),
 

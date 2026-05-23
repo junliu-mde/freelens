@@ -7,7 +7,7 @@
 import type { AiAgentProviderConfig } from "../common/channels";
 
 export const defaultAiAgentProviderConfig: AiAgentProviderConfig = {
-  baseUrl: "REDACTED_BASE_URL",
-  apiKey: "REDACTED_API_KEY",
-  model: "GLM-5.1-Coding",
+  baseUrl: "",
+  apiKey: "",
+  model: "",
 };

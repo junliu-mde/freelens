@@ -10,7 +10,7 @@ import { formatNodeTaint } from "@freelensapp/kube-object";
 import { Tooltip, TooltipPosition } from "@freelensapp/tooltip";
 import { bytesToUnits, interval } from "@freelensapp/utilities";
 import { withInjectables } from "@ogre-tools/injectable-react";
-import { makeObservable, observable } from "mobx";
+import { makeObservable, observable, computed } from "mobx";
 import { observer } from "mobx-react";
 import React from "react";
 import requestAllNodeMetricsInjectable from "../../../common/k8s-api/endpoints/metrics.api/request-metrics-for-all-nodes.injectable";
@@ -72,7 +72,7 @@ interface Dependencies {
 
 function bytesToUnitsAligned(bytes: number): string {
   if (bytes < 1024) {
-    return `${(bytes / 1024).toFixed(1)}Ki`;
+    return `${bytes}B`;
   }
   return bytesToUnits(bytes, { precision: 1 }).replace(/B$/, "");
 }
@@ -193,14 +193,21 @@ class NonInjectedNodesRoute extends React.Component<Dependencies> {
     });
   }
 
-  private getNodeGpuAllocated(node: Node): number {
-    const pods = this.props.podStore.getPodsByNode(node.getName());
-    let allocated = 0;
+  @computed
+  private get gpuAllocatedByNode(): Map<string, number> {
+    const result = new Map<string, number>();
+    const pods = this.props.podStore.items;
 
     for (const pod of pods) {
       const phase = pod.getStatusPhase();
 
-      if (phase !== "Running" && phase !== "Pending") {
+      if (phase !== "Running") {
+        continue;
+      }
+
+      const nodeName = pod.getNodeName();
+
+      if (!nodeName) {
         continue;
       }
 
@@ -208,12 +215,16 @@ class NonInjectedNodesRoute extends React.Component<Dependencies> {
         const gpuRequest = container.resources?.requests?.[GPU_RESOURCE_KEY];
 
         if (gpuRequest) {
-          allocated += parseInt(gpuRequest, 10) || 0;
+          result.set(nodeName, (result.get(nodeName) ?? 0) + (parseInt(gpuRequest, 10) || 0));
         }
       }
     }
 
-    return allocated;
+    return result;
+  }
+
+  private getNodeGpuAllocated(node: Node): number {
+    return this.gpuAllocatedByNode.get(node.getName()) ?? 0;
   }
 
   renderGpuUsage(node: Node) {
