@@ -6,7 +6,7 @@
 
 import { stream, validateToolCall } from "@earendil-works/pi-ai";
 import { normalizeAiAgentSettings } from "../common/settings";
-import { kubectlAiAgentTools } from "./kubectl-tools";
+import { kubectlAiAgentTools, kubectlAiAgentWriteTools } from "./kubectl-tools";
 
 import type { AssistantMessage, Context, Model, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
 import type { ClusterId } from "../../../common/cluster-types";
@@ -61,10 +61,19 @@ export const runAiAgentChat = async (
   signal: AbortSignal,
 ): Promise<void> => {
   const settings = normalizeAiAgentSettings(rawSettings);
-  const tools = settings.enableKubectlTools ? kubectlAiAgentTools : undefined;
+  const permissionMode = request.permissionMode ?? "read-only";
+  const tools = settings.enableKubectlTools
+    ? permissionMode === "read-write"
+      ? [...kubectlAiAgentTools, ...kubectlAiAgentWriteTools]
+      : kubectlAiAgentTools
+    : undefined;
   const clusterContext = clusterId ? `Active cluster ID: ${clusterId}.` : "No active cluster connected.";
+  const permissionContext =
+    permissionMode === "read-write"
+      ? "You are in read-write mode. Write kubectl operations may be available through provided tools, but prefer safe, explicit actions and inspect before mutating."
+      : "You are in read-only mode. You may only inspect cluster resources; never attempt any mutating operations.";
   const context: Context = {
-    systemPrompt: `You are an AI Agent inside Freelens, a Kubernetes IDE. ${clusterContext} Be concise and practical. When Kubernetes debugging is requested, use the provided read-only kubectl tools against the active cluster, inspect evidence first, then explain findings and next safe actions. Never suggest destructive kubectl actions unless the user explicitly asks.`,
+    systemPrompt: `You are an AI Agent inside Freelens, a Kubernetes IDE. ${clusterContext} ${permissionContext} Be concise and practical. When Kubernetes debugging is requested, use the provided kubectl tools against the active cluster, inspect evidence first, then explain findings and next safe actions. Never suggest destructive kubectl actions unless the user explicitly asks.`,
     messages: request.messages.map((message) => ({
       role: "user" as const,
       content: `${message.role === "assistant" ? "Previous assistant" : "User"}: ${message.content}`,

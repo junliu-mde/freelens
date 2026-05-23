@@ -8,6 +8,7 @@ import { observable, reaction } from "mobx";
 
 import { DockTabStore } from "../dock-tab-store/dock-tab.store";
 
+import type { AiAgentPermissionMode } from "../../../../features/ai-agent/common/channels";
 import type { DockTabStoreDependencies } from "../dock-tab-store/dock-tab.store";
 import type { StorageLayer } from "../../../utils/storage-helper";
 import type { TabId } from "../dock/store";
@@ -71,6 +72,7 @@ export interface AiAgentTabData {
   activeRunId?: string;
   clusterId?: string;
   sessionId: string;
+  permissionMode: AiAgentPermissionMode;
 }
 
 export interface AiAgentSession {
@@ -78,6 +80,7 @@ export interface AiAgentSession {
   title: string;
   messages: AiAgentMessage[];
   clusterId?: string;
+  permissionMode?: AiAgentPermissionMode;
   createdAt: number;
   updatedAt: number;
 }
@@ -144,10 +147,11 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
       status: "idle",
       clusterId: undefined,
       sessionId,
+      permissionMode: "read-only",
     };
 
     this.setData(tabId, data);
-    this.saveSession(tabId, sessionId, data.messages, data.clusterId);
+    this.saveSession(tabId, sessionId, data.messages, data.clusterId, data.permissionMode);
 
     return data;
   }
@@ -167,6 +171,24 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     this.setData(tabId, {
       ...data,
       clusterId,
+    });
+  }
+
+  setPermissionMode(tabId: TabId, permissionMode: AiAgentPermissionMode): void {
+    const data = this.initTab(tabId);
+
+    this.setData(tabId, {
+      ...data,
+      permissionMode,
+    });
+  }
+
+  togglePermissionMode(tabId: TabId): void {
+    const data = this.initTab(tabId);
+
+    this.setData(tabId, {
+      ...data,
+      permissionMode: data.permissionMode === "read-only" ? "read-write" : "read-only",
     });
   }
 
@@ -355,7 +377,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     const data = this.initTab(tabId);
 
     // Save current session before clearing
-    this.saveSession(tabId, data.sessionId, data.messages, data.clusterId);
+    this.saveSession(tabId, data.sessionId, data.messages, data.clusterId, data.permissionMode);
 
     // Start a new session
     const sessionId = crypto.randomUUID();
@@ -366,6 +388,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
       status: "idle",
       clusterId: data.clusterId,
       sessionId,
+      permissionMode: "read-only",
     });
   }
 

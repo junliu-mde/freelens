@@ -147,15 +147,99 @@ const buildKubectlArgs = (toolCall: ToolCall): string[] => {
       return result;
     }
 
+    // ── Write tools (only available in read-write mode) ──────────────
+
+    case "kubectl_apply": {
+      const manifest = stringifyArg(args.manifest);
+
+      if (!manifest) {
+        throw new Error("manifest is required");
+      }
+
+      const result = ["apply", "--filename", "-"];
+
+      addNamespaceArgs(result, stringifyArg(args.namespace));
+
+      if (booleanArg(args.dryRun) || args.dryRun === undefined) {
+        result.push("--dry-run=client");
+      }
+
+      return result;
+    }
+
+    case "kubectl_delete": {
+      const resource = stringifyArg(args.resource);
+      const name = stringifyArg(args.name);
+
+      if (!resource || !name) {
+        throw new Error("resource and name are required");
+      }
+
+      validateSafeResource(resource);
+
+      const result = ["delete", resource, name];
+
+      addNamespaceArgs(result, stringifyArg(args.namespace));
+
+      return result;
+    }
+
+    case "kubectl_scale": {
+      const resource = stringifyArg(args.resource);
+      const name = stringifyArg(args.name);
+      const replicas = numberArg(args.replicas);
+
+      if (!resource || !name || replicas === undefined) {
+        throw new Error("resource, name, and replicas are required");
+      }
+
+      validateSafeResource(resource);
+
+      const result = ["scale", resource, name, "--replicas", String(replicas)];
+
+      addNamespaceArgs(result, stringifyArg(args.namespace));
+
+      return result;
+    }
+
+    case "kubectl_rollout_restart": {
+      const resource = stringifyArg(args.resource);
+      const name = stringifyArg(args.name);
+
+      if (!resource || !name) {
+        throw new Error("resource and name are required");
+      }
+
+      validateSafeResource(resource);
+
+      const result = ["rollout", "restart", resource, name];
+
+      addNamespaceArgs(result, stringifyArg(args.namespace));
+
+      return result;
+    }
+
     default:
       throw new Error(`Unsupported tool: ${toolCall.name}`);
   }
 };
 
-const runKubectl = async (execFile: ExecFile, kubectl: Kubectl, kubeconfigPath: string, args: string[]) => {
+const runKubectl = async (
+  execFile: ExecFile,
+  kubectl: Kubectl,
+  kubeconfigPath: string,
+  args: string[],
+  stdin?: string,
+) => {
   const kubectlPath = await kubectl.getPath();
   const commandArgs = ["--kubeconfig", kubeconfigPath, ...args, "--request-timeout=20s"];
-  const result = await execFile(kubectlPath, commandArgs, { maxBuffer: 1024 * 1024 * 8 });
+  const execOptions: Record<string, unknown> = { maxBuffer: 1024 * 1024 * 8 };
+
+  if (stdin) {
+    execOptions.input = stdin;
+  }
+
+  const result = await execFile(kubectlPath, commandArgs, execOptions);
 
   if (result.callWasSuccessful) {
     return result.response.slice(0, maxOutputLength) || "Command completed with no output.";
@@ -188,7 +272,11 @@ const createExecuteAiAgentKubectlTool =
       const kubeconfigManager = di.inject(kubeconfigManagerInjectable, cluster);
       const kubeconfigPath = await kubeconfigManager.ensurePath();
       const args = buildKubectlArgs(toolCall);
-      const output = await runKubectl(execFile, kubectl, kubeconfigPath, args);
+
+      // kubectl_apply reads manifest from stdin
+      const isApply = toolCall.name === "kubectl_apply";
+      const manifest = isApply ? (stringifyArg(toolCall.arguments.manifest) ?? "") : undefined;
+      const output = await runKubectl(execFile, kubectl, kubeconfigPath, args, manifest);
 
       return {
         content: `$ kubectl ${args.join(" ")}\n${output}`,

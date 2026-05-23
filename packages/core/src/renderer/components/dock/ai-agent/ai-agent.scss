@@ -6,6 +6,7 @@
 
 .AiAgent {
   height: 100%;
+  min-width: 0;
   background: #0b0f14;
   color: var(--textColorPrimary);
   font-family:
@@ -41,6 +42,23 @@
       background: rgba(56, 189, 248, 0.08);
       font-size: 10px;
       font-family: monospace;
+    }
+
+    .toolbar-permission {
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 999px;
+      padding: 1px 8px;
+      color: #94a3b8;
+      background: rgba(148, 163, 184, 0.08);
+      font-size: 10px;
+      text-transform: uppercase;
+      cursor: default;
+
+      &.read-write {
+        border-color: rgba(251, 191, 36, 0.45);
+        color: #fde68a;
+        background: rgba(251, 191, 36, 0.1);
+      }
     }
 
     .session-switcher {
@@ -141,6 +159,8 @@
 
   .AiAgentMessages {
     overflow-y: auto;
+    min-height: 0;
+    min-width: 0;
     padding: 10px 14px 16px;
     gap: 6px;
     background:
@@ -168,6 +188,8 @@
   .AiAgentMessage {
     display: block;
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
 
     &.user {
       .message-body {
@@ -189,7 +211,7 @@
       border-radius: 0;
       padding: 7px 10px;
       min-width: 0;
-      max-width: none;
+      max-width: 100%;
     }
 
     .message-role {
@@ -217,6 +239,8 @@
       word-break: break-word;
       line-height: 1.55;
       overflow: hidden;
+      min-width: 0;
+      max-width: 100%;
     }
   }
 
@@ -230,6 +254,8 @@
     background: rgba(2, 6, 23, 0.64);
     overflow: hidden;
     max-height: 400px;
+    max-width: 100%;
+    contain: paint;
   }
 
   .tool-flow-block {
@@ -247,15 +273,22 @@
       font-family: inherit;
       font-size: 12px;
       background: transparent;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .tool-flow-result {
+      display: block;
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 100%;
       margin: 0;
       padding: 9px 10px;
       border-top: 1px solid rgba(148, 163, 184, 0.16);
       overflow: auto;
       max-height: 300px;
-      white-space: pre-wrap;
+      white-space: pre;
       color: #dbeafe;
       background: #020617;
       font-size: 12px;
@@ -323,6 +356,8 @@
   }
 
   pre {
+    box-sizing: border-box;
+    max-width: 100%;
     margin: 0;
     padding: 9px 10px;
     border-top: 1px solid rgba(148, 163, 184, 0.16);
@@ -424,6 +459,29 @@
     padding: 10px 12px;
     border-top: 1px solid rgba(148, 163, 184, 0.18);
     background: #0f1720;
+    transition:
+      border-color 0.2s,
+      background 0.2s;
+
+    &.read-write {
+      border-top-color: rgba(251, 191, 36, 0.4);
+      background: rgba(251, 191, 36, 0.04);
+
+      textarea {
+        border-color: rgba(251, 191, 36, 0.35);
+        background: rgba(251, 191, 36, 0.06);
+
+        &:focus {
+          border-color: #fbbf24;
+        }
+      }
+
+      button {
+        border-color: #fbbf24;
+        background: rgba(251, 191, 36, 0.15);
+        color: #fde68a;
+      }
+    }
 
     textarea {
       flex: 1;
@@ -436,6 +494,9 @@
       background: #020617;
       color: #e2e8f0;
       font: inherit;
+      transition:
+        border-color 0.2s,
+        background 0.2s;
 
       &:focus {
         border-color: #38bdf8;
@@ -451,6 +512,10 @@
       background: rgba(34, 197, 94, 0.15);
       color: #bbf7d0;
       cursor: pointer;
+      transition:
+        border-color 0.2s,
+        background 0.2s,
+        color 0.2s;
 
       &:disabled {
         cursor: not-allowed;
