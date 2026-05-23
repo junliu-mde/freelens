@@ -8,6 +8,7 @@
 
 import clearAiAgentTabDataInjectable from "./clear-ai-agent-tab-data.injectable";
 import createAiAgentTabInjectable from "./create-ai-agent-tab.injectable";
+import openAiAgentWithResourceContextInjectable from "./open-ai-agent-with-resource-context.injectable";
 import aiAgentTabStoreInjectable from "./store.injectable";
 
 import type { DiContainerForInjection } from "@ogre-tools/injectable";
@@ -25,6 +26,11 @@ export function registerInjectables(di: DiContainerForInjection): void {
   }
   try {
     di.register(createAiAgentTabInjectable);
+  } catch (e) {
+    /* Ignore duplicate registration */
+  }
+  try {
+    di.register(openAiAgentWithResourceContextInjectable);
   } catch (e) {
     /* Ignore duplicate registration */
   }

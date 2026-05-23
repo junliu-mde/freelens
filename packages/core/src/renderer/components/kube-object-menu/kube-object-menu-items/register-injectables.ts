@@ -6,6 +6,7 @@
  * This replaces the webpack-based auto-registration system.
  */
 
+import askAiMenuInjectable from "./ask-ai-menu.injectable";
 import cronJobMenuInjectable from "./cron-job-menu.injectable";
 import daemonsetMenuInjectable from "./daemonset-menu.injectable";
 import deploymentMenuInjectable from "./deployment-menu.injectable";
@@ -17,6 +18,11 @@ import statefulsetMenuInjectable from "./statefulset-menu.injectable";
 import type { DiContainerForInjection } from "@ogre-tools/injectable";
 
 export function registerInjectables(di: DiContainerForInjection): void {
+  try {
+    di.register(askAiMenuInjectable);
+  } catch (e) {
+    /* Ignore duplicate registration */
+  }
   try {
     di.register(cronJobMenuInjectable);
   } catch (e) {

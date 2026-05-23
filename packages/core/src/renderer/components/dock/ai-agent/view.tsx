@@ -14,7 +14,7 @@ import hljs from "highlight.js/lib/common";
 import { marked } from "marked";
 import { observer } from "mobx-react";
 import React from "react";
-import hostedClusterIdInjectable from "../../../cluster-frame-context/hosted-cluster-id.injectable";
+import hostedClusterInjectable from "../../../cluster-frame-context/hosted-cluster.injectable";
 import abortAiAgentMessageInjectable from "../../../ipc/abort-ai-agent-message.injectable";
 import sendAiAgentMessageInjectable from "../../../ipc/send-ai-agent-message.injectable";
 import aiAgentTabStoreInjectable from "./store.injectable";
@@ -22,7 +22,6 @@ import aiAgentTabStoreInjectable from "./store.injectable";
 import type { AiAgentMessage, AiAgentMessagePart, AiAgentTabStore } from "./store";
 import type { AbortAiAgentMessage } from "../../../ipc/abort-ai-agent-message.injectable";
 import type { SendAiAgentMessage } from "../../../ipc/send-ai-agent-message.injectable";
-
 export interface AiAgentViewProps {
   tabId: string;
 }
@@ -30,7 +29,7 @@ export interface AiAgentViewProps {
 interface Dependencies {
   abortAiAgentMessage: AbortAiAgentMessage;
   aiAgentTabStore: AiAgentTabStore;
-  hostedClusterId: string | undefined;
+  hostedCluster: { id: string; name: { get(): string } } | undefined;
   sendAiAgentMessage: SendAiAgentMessage;
 }
 
@@ -64,12 +63,21 @@ const renderMarkdown = (markdown: string) => ({
 class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependencies> {
   private readonly messagesEndRef = React.createRef<HTMLDivElement>();
   private sessionMenuRef = React.createRef<HTMLDivElement>();
+  private textareaRef = React.createRef<HTMLTextAreaElement>();
 
   state = { sessionMenuOpen: false };
 
   componentDidMount() {
     this.props.aiAgentTabStore.initTab(this.props.tabId);
     this.scrollToBottom();
+
+    // Focus input and place cursor at the beginning when a draft is pre-filled (e.g. from "Ask AI")
+    const { inputDraft, messages } = this.data;
+
+    if (inputDraft && messages.length === 0 && this.textareaRef.current) {
+      this.textareaRef.current.focus();
+      this.textareaRef.current.setSelectionRange(0, 0);
+    }
   }
 
   componentDidUpdate() {
@@ -104,7 +112,14 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
   };
 
   private onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (event.key === "Tab" && event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      this.props.aiAgentTabStore.togglePermissionMode(this.props.tabId);
+
+      return;
+    }
+
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
       this.sendMessage();
     }
@@ -118,7 +133,8 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
     }
 
     const runId = crypto.randomUUID();
-    const { aiAgentTabStore, hostedClusterId } = this.props;
+    const { aiAgentTabStore, hostedCluster } = this.props;
+    const hostedClusterId = hostedCluster?.id;
 
     // Bind this tab to the current cluster on first use
     if (!this.data.clusterId && hostedClusterId) {
@@ -143,6 +159,7 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
         tabId: this.props.tabId,
         runId,
         messages,
+        permissionMode: this.data.permissionMode,
       })
       .catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -190,6 +207,8 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
     evt.stopPropagation();
     this.props.aiAgentTabStore.deleteSession(sessionId);
   };
+
+  private getClusterDisplayName = (): string | undefined => this.props.hostedCluster?.name.get();
 
   private renderParts = (parts: AiAgentMessagePart[]) => {
     // First pass: collect tool results keyed by toolCallId
@@ -275,11 +294,17 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
           continue;
         }
 
-        // Unpaired result: show standalone
         elements.push(
-          <div key={`tr-${i}`} className={cssNames("tool-result-block", { error: part.isError })}>
-            <pre>{part.content}</pre>
-          </div>,
+          <details
+            key={`tr-${i}`}
+            className={cssNames("tool-flow-block", "tool-result-block", { error: part.isError })}
+          >
+            <summary>
+              <span className="summary-prefix">❯</span>
+              <code className="tool-flow-name">kubectl result</code>
+            </summary>
+            <pre className={cssNames("tool-flow-result", { error: part.isError })}>{part.content}</pre>
+          </details>,
         );
         i += 1;
         continue;
@@ -382,13 +407,20 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
     const { inputDraft, messages } = this.data;
     const sessions = this.props.aiAgentTabStore.getSessionsForCluster(this.data.clusterId);
     const sessionTitle = this.getCurrentSessionTitle();
+    const clusterDisplayName = this.getClusterDisplayName();
 
     return (
       <div className="AiAgent flex column">
         <div className="AiAgentToolbar flex gaps align-center">
           <Icon small material="terminal" />
           <span className="toolbar-title">{sessionTitle}</span>
-          {this.data.clusterId ? <span className="toolbar-cluster">{this.data.clusterId.slice(0, 8)}</span> : null}
+          {clusterDisplayName ? <span className="toolbar-cluster">{clusterDisplayName}</span> : null}
+          <span
+            className={cssNames("toolbar-permission", { "read-write": this.data.permissionMode === "read-write" })}
+            title="Shift+Tab to toggle permission mode"
+          >
+            {this.data.permissionMode === "read-write" ? "read-write" : "read-only"}
+          </span>
           <span className="toolbar-status">{this.isStreaming ? "running" : "ready"}</span>
           <div className="box grow" />
           {this.isStreaming ? <Icon material="stop_circle" tooltip="Stop" onClick={this.stop} /> : null}
@@ -443,12 +475,17 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
           <div ref={this.messagesEndRef} />
         </div>
 
-        <div className="AiAgentInput flex gaps align-center">
+        <div
+          className={cssNames("AiAgentInput", "flex", "gaps", "align-center", {
+            "read-write": this.data.permissionMode === "read-write",
+          })}
+        >
           <textarea
+            ref={this.textareaRef}
             value={inputDraft}
             onChange={this.onInputChange}
             onKeyDown={this.onKeyDown}
-            placeholder="Type an instruction. Enter to run, Shift+Enter for newline."
+            placeholder="Type an instruction. Enter to run, Shift+Enter for newline, Shift+Tab to toggle read-only/read-write."
             disabled={this.isStreaming}
           />
           <button type="button" onClick={this.sendMessage} disabled={!inputDraft.trim() || this.isStreaming}>
@@ -464,7 +501,7 @@ export const AiAgentView = withInjectables<Dependencies, AiAgentViewProps>(NonIn
   getProps: (di, props) => ({
     abortAiAgentMessage: di.inject(abortAiAgentMessageInjectable),
     aiAgentTabStore: di.inject(aiAgentTabStoreInjectable),
-    hostedClusterId: di.inject(hostedClusterIdInjectable),
+    hostedCluster: di.inject(hostedClusterInjectable),
     sendAiAgentMessage: di.inject(sendAiAgentMessageInjectable),
     ...props,
   }),

@@ -8,6 +8,8 @@ export const aiAgentSendChannel = "ai-agent:send";
 export const aiAgentAbortChannel = "ai-agent:abort";
 export const aiAgentStreamEventChannel = "ai-agent:stream-event";
 
+export type AiAgentPermissionMode = "read-only" | "read-write";
+
 export interface AiAgentChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -17,6 +19,7 @@ export interface AiAgentSendRequest {
   tabId: string;
   runId: string;
   messages: AiAgentChatMessage[];
+  permissionMode: AiAgentPermissionMode;
   metadata?: Record<string, unknown>;
 }
 
