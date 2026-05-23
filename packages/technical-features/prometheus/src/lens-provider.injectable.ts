@@ -56,7 +56,7 @@ export const getLensLikeQueryFor =
           case "gpuAllocatableCapacity":
             return `sum(kube_node_status_allocatable{node=~"${opts.nodes}", resource="nvidia_com_gpu"}) by (component)`;
           case "gpuRequests":
-            return `sum(kube_pod_container_resource_requests{node=~"${opts.nodes}", resource="nvidia_com_gpu"}) by (component)`;
+            return `sum(kube_pod_container_resource_requests{node=~"${opts.nodes}", resource="nvidia_com_gpu"} * on(pod, namespace) group_left() (kube_pod_status_phase{phase="Running"} == 1)) by (component)`;
           case "fsSize":
             return `sum(node_filesystem_size_bytes{kubernetes_node=~"${opts.nodes}", mountpoint=~"${opts.mountpoints}"}) by (kubernetes_node)`;
           case "fsUsage":
