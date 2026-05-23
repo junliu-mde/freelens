@@ -229,6 +229,7 @@
     border-radius: 4px;
     background: rgba(2, 6, 23, 0.64);
     overflow: hidden;
+    max-height: 400px;
   }
 
   .tool-flow-block {
@@ -253,6 +254,7 @@
       padding: 9px 10px;
       border-top: 1px solid rgba(148, 163, 184, 0.16);
       overflow: auto;
+      max-height: 300px;
       white-space: pre-wrap;
       color: #dbeafe;
       background: #020617;
@@ -381,6 +383,8 @@
       border: 1px solid rgba(59, 130, 246, 0.24);
       border-radius: 4px;
       background: #020617;
+      max-height: 350px;
+      overflow: auto;
     }
 
     .hljs {
