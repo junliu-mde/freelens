@@ -107,6 +107,13 @@ interface Dependencies {
   readonly tabDataValidator: Partial<Record<TabKind, (tabId: TabId) => boolean>>;
 }
 
+const knownTabKinds = new Set<string>(Object.values(TabKind));
+
+// Migrate legacy tab kind names to their current values
+const tabKindMigrations: Record<string, TabKind> = {
+  "ai-chat": TabKind.AI_AGENT,
+};
+
 export class DockStore implements DockStorageState {
   constructor(private readonly dependencies: Dependencies) {
     makeObservable(this);
@@ -114,6 +121,29 @@ export class DockStore implements DockStorageState {
 
     // adjust terminal height if window size changes
     window.addEventListener("resize", throttle(this.adjustHeight, 250));
+
+    // Migrate legacy tab kinds and remove tabs with unknown kinds
+    const validTabs = this.tabs
+      .map((tab) => {
+        const migratedKind = tabKindMigrations[tab.kind];
+
+        return migratedKind ? { ...tab, kind: migratedKind } : tab;
+      })
+      .filter((tab) => {
+        if (!knownTabKinds.has(tab.kind)) {
+          return false;
+        }
+
+        return true;
+      });
+
+    if (validTabs.length !== this.tabs.length) {
+      this.tabs = validTabs;
+
+      if (!validTabs.length) {
+        this.close();
+      }
+    }
 
     for (const tab of this.tabs) {
       const tabDataIsValid = this.dependencies.tabDataValidator[tab.kind] ?? (() => true);
