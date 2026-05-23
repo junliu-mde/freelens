@@ -669,7 +669,10 @@ function ColumnOrderMenu({
   const savedOrder = getColumnOrder(tableId);
   const orderedColumns = savedOrder
     ? [
-        ...savedOrder.filter((id) => columns.some((c) => c.id === id)).map((id) => columns.find((c) => c.id === id)!),
+        ...savedOrder
+          .filter((id) => columns.some((c) => c.id === id))
+          .map((id) => columns.find((c) => c.id === id))
+          .filter((c): c is TableCellProps & { id: string } => c !== undefined),
         ...columns.filter((c) => !savedOrder.includes(c.id)),
       ]
     : columns;

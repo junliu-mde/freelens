@@ -43,6 +43,26 @@ const validateSafeResource = (resource: string) => {
   }
 };
 
+const dangerousManifestPatterns = [
+  /cluster-admin/,
+  /privileged:\s*true/,
+  /hostPath:/,
+  /hostPID:\s*true/,
+  /hostNetwork:\s*true/,
+  /hostIPC:\s*true/,
+];
+
+const validateSafeManifest = (manifest: string) => {
+  for (const pattern of dangerousManifestPatterns) {
+    if (pattern.test(manifest)) {
+      throw new Error(
+        `Manifest contains potentially dangerous pattern (${pattern.source}). ` +
+          `Apply with explicit confirmation is required for privileged workloads.`,
+      );
+    }
+  }
+};
+
 const addNamespaceArgs = (args: string[], namespace?: string, allNamespaces?: boolean) => {
   if (allNamespaces) {
     args.push("--all-namespaces");
@@ -156,11 +176,13 @@ const buildKubectlArgs = (toolCall: ToolCall): string[] => {
         throw new Error("manifest is required");
       }
 
+      validateSafeManifest(manifest);
+
       const result = ["apply", "--filename", "-"];
 
       addNamespaceArgs(result, stringifyArg(args.namespace));
 
-      if (booleanArg(args.dryRun) || args.dryRun === undefined) {
+      if (booleanArg(args.dryRun)) {
         result.push("--dry-run=client");
       }
 
