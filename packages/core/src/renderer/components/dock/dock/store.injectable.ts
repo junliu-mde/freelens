@@ -5,6 +5,7 @@
  */
 
 import { getInjectable } from "@ogre-tools/injectable";
+import clearAiAgentTabDataInjectable from "../ai-agent/clear-ai-agent-tab-data.injectable";
 import clearCreateResourceTabDataInjectable from "../create-resource/clear-create-resource-tab-data.injectable";
 import clearEditResourceTabDataInjectable from "../edit-resource/clear-edit-resource-tab-data.injectable";
 import clearInstallChartTabDataInjectable from "../install-chart/clear-install-chart-tab-data.injectable";
@@ -22,6 +23,7 @@ const dockStoreInjectable = getInjectable({
     new DockStore({
       storage: di.inject(dockStorageInjectable),
       tabDataClearers: {
+        [TabKind.AI_AGENT]: di.inject(clearAiAgentTabDataInjectable),
         [TabKind.POD_LOGS]: di.inject(clearLogTabDataInjectable),
         [TabKind.UPGRADE_CHART]: di.inject(clearUpgradeChartTabDataInjectable),
         [TabKind.CREATE_RESOURCE]: di.inject(clearCreateResourceTabDataInjectable),

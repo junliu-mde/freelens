@@ -9,6 +9,7 @@ import { getInjectable } from "@ogre-tools/injectable";
 import { broadcastMessage } from "../../../common/ipc";
 import { bundledExtensionsLoaded } from "../../../common/ipc/extension-handling";
 import catalogEntityRegistryInjectable from "../../api/catalog/entity/registry.injectable";
+import registerAiAgentIpcListenersInjectable from "../../ipc/register-ai-agent-ipc-listeners.injectable";
 import registerIpcListenersInjectable from "../../ipc/register-ipc-listeners.injectable";
 import bindProtocolAddRouteHandlersInjectable from "../../protocol-handler/bind-protocol-add-route-handlers/bind-protocol-add-route-handlers.injectable";
 import lensProtocolRouterRendererInjectable from "../../protocol-handler/lens-protocol-router-renderer/lens-protocol-router-renderer.injectable";
@@ -19,6 +20,7 @@ const initRootFrameInjectable = getInjectable({
   id: "init-root-frame",
   instantiate: (di) => {
     const loadExtensions = di.inject(loadExtensionsInjectable);
+    const registerAiAgentIpcListeners = di.inject(registerAiAgentIpcListenersInjectable);
     const registerIpcListeners = di.inject(registerIpcListenersInjectable);
     const ipcRenderer = di.inject(ipcRendererInjectable);
     const bindProtocolAddRouteHandlers = di.inject(bindProtocolAddRouteHandlersInjectable);
@@ -52,6 +54,7 @@ const initRootFrameInjectable = getInjectable({
       window.addEventListener("online", () => broadcastMessage("network:online"));
 
       registerIpcListeners();
+      registerAiAgentIpcListeners();
     };
   },
 });

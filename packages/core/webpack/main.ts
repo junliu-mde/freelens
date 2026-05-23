@@ -35,7 +35,7 @@ const webpackLensMain = (): webpack.Configuration => {
     resolve: {
       extensions: [".json", ".js", ".ts", ".tsx"],
     },
-    externals: [nodeExternals({ modulesFromFile: true })],
+    externals: [nodeExternals({ modulesFromFile: true, allowlist: ["@earendil-works/pi-ai"] })],
     module: {
       parser: {
         javascript: {

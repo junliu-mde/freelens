@@ -13,6 +13,8 @@ import { cssNames } from "@freelensapp/utilities";
 import { withInjectables } from "@ogre-tools/injectable-react";
 import { observer } from "mobx-react";
 import React from "react";
+import createAiAgentTabInjectable from "./ai-agent/create-ai-agent-tab.injectable";
+import { AiAgentView } from "./ai-agent/view";
 import { MenuItem } from "../menu";
 import { MenuActions } from "../menu/menu-actions";
 import createResourceTabInjectable from "./create-resource/create-resource-tab.injectable";
@@ -34,6 +36,7 @@ export interface DockProps {
 }
 
 interface Dependencies {
+  createAiAgentTab: () => void;
   createResourceTab: () => void;
   createTerminalTab: () => void;
   dockStore: DockStore;
@@ -113,6 +116,8 @@ class NonInjectedDock extends React.Component<DockProps & Dependencies> {
 
   renderTab(tab: DockTab) {
     switch (tab.kind) {
+      case TabKind.AI_AGENT:
+        return <AiAgentView tabId={tab.id} />;
       case TabKind.CREATE_RESOURCE:
         return <CreateResource tabId={tab.id} />;
       case TabKind.EDIT_RESOURCE:
@@ -171,6 +176,10 @@ class NonInjectedDock extends React.Component<DockProps & Dependencies> {
                 triggerIcon={{ material: "add", className: "new-dock-tab", tooltip: "New tab" }}
                 closeOnScroll={false}
               >
+                <MenuItem className="create-ai-agent-tab" onClick={() => this.props.createAiAgentTab()}>
+                  <Icon small material="smart_toy" />
+                  AI Agent
+                </MenuItem>
                 <MenuItem className="create-terminal-tab" onClick={() => this.props.createTerminalTab()}>
                   <Icon small material="terminal" />
                   Terminal session
@@ -208,6 +217,7 @@ export const Dock = withInjectables<Dependencies, DockProps>(
 
   {
     getProps: (di, props) => ({
+      createAiAgentTab: di.inject(createAiAgentTabInjectable),
       createResourceTab: di.inject(createResourceTabInjectable),
       dockStore: di.inject(dockStoreInjectable),
       createTerminalTab: di.inject(createTerminalTabInjectable),

@@ -6,15 +6,29 @@
  * This replaces the webpack-based auto-registration system.
  */
 
+import abortAiAgentMessageInjectable from "./abort-ai-agent-message.injectable";
 import legacyOnChannelListenInjectable from "./legacy-channel-listen.injectable";
+import listAiAgentModelsInjectable from "./list-ai-agent-models.injectable";
 import listNamespacesForbiddenHandlerInjectable from "./list-namespaces-forbidden-handler.injectable";
+import registerAiAgentIpcListenersInjectable from "./register-ai-agent-ipc-listeners.injectable";
 import registerIpcListenersInjectable from "./register-ipc-listeners.injectable";
+import sendAiAgentMessageInjectable from "./send-ai-agent-message.injectable";
 
 import type { DiContainerForInjection } from "@ogre-tools/injectable";
 
 export function registerInjectables(di: DiContainerForInjection): void {
   try {
+    di.register(abortAiAgentMessageInjectable);
+  } catch (e) {
+    /* Ignore duplicate registration */
+  }
+  try {
     di.register(legacyOnChannelListenInjectable);
+  } catch (e) {
+    /* Ignore duplicate registration */
+  }
+  try {
+    di.register(listAiAgentModelsInjectable);
   } catch (e) {
     /* Ignore duplicate registration */
   }
@@ -24,7 +38,17 @@ export function registerInjectables(di: DiContainerForInjection): void {
     /* Ignore duplicate registration */
   }
   try {
+    di.register(registerAiAgentIpcListenersInjectable);
+  } catch (e) {
+    /* Ignore duplicate registration */
+  }
+  try {
     di.register(registerIpcListenersInjectable);
+  } catch (e) {
+    /* Ignore duplicate registration */
+  }
+  try {
+    di.register(sendAiAgentMessageInjectable);
   } catch (e) {
     /* Ignore duplicate registration */
   }
