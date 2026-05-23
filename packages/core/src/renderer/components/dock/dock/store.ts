@@ -14,6 +14,7 @@ import type { StorageLayer } from "../../../utils/storage-helper";
 export type TabId = string;
 
 export enum TabKind {
+  AI_AGENT = "ai-agent",
   TERMINAL = "terminal",
   CREATE_RESOURCE = "create-resource",
   EDIT_RESOURCE = "edit-resource",

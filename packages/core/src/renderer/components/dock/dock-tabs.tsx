@@ -42,6 +42,8 @@ export const DockTabs = ({ tabs, autoFocus, selectedTab, onChangeTab }: DockTabs
     }
 
     switch (tab.kind) {
+      case TabKind.AI_AGENT:
+        return <DockTab value={tab} icon="smart_toy" />;
       case TabKind.CREATE_RESOURCE:
       case TabKind.EDIT_RESOURCE:
         return <DockTab value={tab} icon="edit" />;

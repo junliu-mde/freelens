@@ -25,7 +25,7 @@ const main: webpack.Configuration = {
   resolve: {
     extensions: [".json", ".js", ".ts"],
   },
-  externals: [nodeExternals({ modulesFromFile: true })],
+  externals: [nodeExternals({ modulesFromFile: true, allowlist: ["@earendil-works/pi-ai"] })],
   module: {
     parser: {
       javascript: {

@@ -6,6 +6,7 @@
  * This replaces the webpack-based auto-registration system.
  */
 
+import { registerInjectables as registerAiAgentInjectables } from "./ai-agent/register-injectables";
 import { registerInjectables as registerCreateResourceInjectables } from "./create-resource/register-injectables";
 import { registerInjectables as registerDockInjectables } from "./dock/register-injectables";
 import { registerInjectables as registerDockTabStoreInjectables } from "./dock-tab-store/register-injectables";
@@ -18,6 +19,11 @@ import { registerInjectables as registerUpgradeChartInjectables } from "./upgrad
 import type { DiContainerForInjection } from "@ogre-tools/injectable";
 
 export function registerInjectables(di: DiContainerForInjection): void {
+  try {
+    registerAiAgentInjectables(di);
+  } catch (e) {
+    /* Ignore duplicate registration */
+  }
   try {
     registerCreateResourceInjectables(di);
   } catch (e) {

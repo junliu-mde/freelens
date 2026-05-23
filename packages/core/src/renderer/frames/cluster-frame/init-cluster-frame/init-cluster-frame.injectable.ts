@@ -11,6 +11,7 @@ import assert from "assert";
 import emitAppEventInjectable from "../../../../common/app-event-bus/emit-event.injectable";
 import catalogEntityRegistryInjectable from "../../../api/catalog/entity/registry.injectable";
 import hostedClusterInjectable from "../../../cluster-frame-context/hosted-cluster.injectable";
+import registerAiAgentIpcListenersInjectable from "../../../ipc/register-ai-agent-ipc-listeners.injectable";
 import loadExtensionsInjectable from "../../load-extensions.injectable";
 import frameRoutingIdInjectable from "./frame-routing-id/frame-routing-id.injectable";
 import { initClusterFrame } from "./init-cluster-frame";
@@ -30,6 +31,7 @@ const initClusterFrameInjectable = getInjectable({
       frameRoutingId: di.inject(frameRoutingIdInjectable),
       emitAppEvent: di.inject(emitAppEventInjectable),
       logger: di.inject(loggerInjectionToken),
+      registerAiAgentIpcListeners: di.inject(registerAiAgentIpcListenersInjectable),
       showErrorNotification: di.inject(showErrorNotificationInjectable),
     });
   },

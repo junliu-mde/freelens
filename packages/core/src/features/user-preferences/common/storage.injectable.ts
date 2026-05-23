@@ -36,6 +36,7 @@ const userPreferencesPersistentStorageInjectable = getInjectable({
       fromStore: action(({ preferences = {} }) => {
         logger.debug("fromStore()", { preferences });
 
+        state.aiAgent = descriptors.aiAgent.fromStore(preferences.aiAgent);
         state.allowErrorReporting = descriptors.allowErrorReporting.fromStore(preferences.allowErrorReporting);
         state.allowUntrustedCAs = descriptors.allowUntrustedCAs.fromStore(preferences.allowUntrustedCAs);
         state.colorTheme = descriptors.colorTheme.fromStore(preferences.colorTheme);
@@ -66,6 +67,7 @@ const userPreferencesPersistentStorageInjectable = getInjectable({
       toJSON: () =>
         toJS({
           preferences: {
+            aiAgent: descriptors.aiAgent.toStore(state.aiAgent),
             allowErrorReporting: descriptors.allowErrorReporting.toStore(state.allowErrorReporting),
             allowUntrustedCAs: descriptors.allowUntrustedCAs.toStore(state.allowUntrustedCAs),
             colorTheme: descriptors.colorTheme.toStore(state.colorTheme),
