@@ -61,9 +61,7 @@ const registerAiAgentIpcListenersInjectable = getInjectable({
     const ipcRenderer = di.inject(ipcRendererInjectable);
     const hostedClusterId = di.inject(hostedClusterIdInjectable);
 
-    return () => {
-      const frameId = window.location.host || "root";
-
+    return (frameId = "root") => {
       if (registeredFrameIds.has(frameId)) {
         return;
       }

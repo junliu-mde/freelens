@@ -21,7 +21,7 @@ interface Dependencies {
   frameRoutingId: number;
   emitAppEvent: EmitAppEvent;
   logger: Logger;
-  registerAiAgentIpcListeners: () => void;
+  registerAiAgentIpcListeners: (frameId?: string) => void;
   showErrorNotification: ShowNotification;
 }
 
@@ -44,7 +44,7 @@ export const initClusterFrame =
 
     logger.info(`${logPrefix} Init dashboard, clusterId=${hostedCluster.id}, frameId=${frameRoutingId}`);
 
-    registerAiAgentIpcListeners();
+    registerAiAgentIpcListeners(String(frameRoutingId));
 
     await requestSetClusterFrameId(hostedCluster.id);
     await when(() => hostedCluster.ready.get()); // cluster.activate() is done at this point

@@ -27,14 +27,8 @@ export const defaultAiAgentSettings: AiAgentSettings = {
 export const normalizeAiAgentSettings = (settings?: Partial<AiAgentSettings>): AiAgentSettings => ({
   ...defaultAiAgentSettings,
   ...settings,
-  provider: settings?.provider ?? defaultAiAgentSettings.provider,
-  baseUrl: settings?.baseUrl ?? defaultAiAgentSettings.baseUrl,
-  apiKey: settings?.apiKey ?? defaultAiAgentSettings.apiKey,
-  model: settings?.model ?? defaultAiAgentSettings.model,
-  reasoningEffort: settings?.reasoningEffort ?? defaultAiAgentSettings.reasoningEffort,
   maxTokens: Number.isFinite(settings?.maxTokens) ? Number(settings?.maxTokens) : defaultAiAgentSettings.maxTokens,
-  temperature: Number.isFinite(settings?.temperature) ? Number(settings?.temperature) : undefined,
-  enableKubectlTools: settings?.enableKubectlTools ?? defaultAiAgentSettings.enableKubectlTools,
+  temperature: settings?.temperature !== undefined ? Number(settings?.temperature) : undefined,
   maxToolIterations: Number.isFinite(settings?.maxToolIterations)
     ? Number(settings?.maxToolIterations)
     : defaultAiAgentSettings.maxToolIterations,
