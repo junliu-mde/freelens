@@ -27,7 +27,7 @@ export type ExecuteAiAgentKubectlTool = (
 ) => Promise<AiAgentToolExecutionResult>;
 
 const maxOutputLength = 16_000;
-const allowedResourcePattern = /^[a-z0-9./-]+$/i;
+const allowedResourcePattern = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*(?:\/[a-z][a-z0-9.-]*)?$/i;
 
 const stringifyArg = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() ? value.trim() : undefined;

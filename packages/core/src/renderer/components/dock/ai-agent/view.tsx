@@ -85,6 +85,12 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
   }
 
   componentWillUnmount() {
+    const { activeRunId } = this.data;
+
+    if (activeRunId && this.isStreaming) {
+      this.props.abortAiAgentMessage(this.props.tabId, activeRunId);
+    }
+
     document.removeEventListener("click", this.onDocumentClick);
   }
 
