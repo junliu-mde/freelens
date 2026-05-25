@@ -18,6 +18,17 @@ jest.mock("@freelensapp/icon", () => ({
   Icon: ({ material }: { material?: string }) => <span>{material}</span>,
 }));
 
+const createDockStore = (tabId: string) =>
+  ({
+    onTabChange: (callback: ({ tabId }: { tabId: string }) => void, options?: { fireImmediately?: boolean }) => {
+      if (options?.fireImmediately) {
+        callback({ tabId });
+      }
+
+      return () => {};
+    },
+  }) as any;
+
 describe("<AiAgentView />", () => {
   let user: UserEvent;
   let store: AiAgentTabStore;
@@ -42,6 +53,7 @@ describe("<AiAgentView />", () => {
         randomUUID: jest.fn(() => `uuid-${++uuidCount}`),
       },
     });
+    jest.spyOn(window, "focus").mockImplementation(() => {});
     jest.spyOn(window, "requestAnimationFrame").mockImplementation((callback: FrameRequestCallback) => {
       callback(0);
 
@@ -58,6 +70,7 @@ describe("<AiAgentView />", () => {
       <NonInjectedAiAgentView
         abortAiAgentMessage={abortAiAgentMessage}
         aiAgentTabStore={store}
+        dockStore={createDockStore("tab-1")}
         hostedCluster={{ id: "cluster-1", name: { get: () => "cluster-1" } }}
         sendAiAgentMessage={jest.fn(() => Promise.resolve())}
         showErrorNotification={jest.fn()}
@@ -77,6 +90,7 @@ describe("<AiAgentView />", () => {
       <NonInjectedAiAgentView
         abortAiAgentMessage={abortAiAgentMessage}
         aiAgentTabStore={store}
+        dockStore={createDockStore("tab-shift-tab")}
         hostedCluster={{ id: "cluster-1", name: { get: () => "cluster-1" } }}
         sendAiAgentMessage={jest.fn(() => Promise.resolve())}
         showErrorNotification={jest.fn()}
@@ -100,6 +114,7 @@ describe("<AiAgentView />", () => {
       <NonInjectedAiAgentView
         abortAiAgentMessage={abortAiAgentMessage}
         aiAgentTabStore={store}
+        dockStore={createDockStore("tab-2")}
         hostedCluster={{ id: "cluster-1", name: { get: () => "cluster-1" } }}
         sendAiAgentMessage={jest.fn(() => Promise.resolve())}
         showErrorNotification={jest.fn()}
@@ -129,6 +144,7 @@ describe("<AiAgentView />", () => {
       <NonInjectedAiAgentView
         abortAiAgentMessage={abortAiAgentMessage}
         aiAgentTabStore={store}
+        dockStore={createDockStore("tab-typing")}
         hostedCluster={{ id: "cluster-1", name: { get: () => "cluster-1" } }}
         sendAiAgentMessage={jest.fn(() => Promise.resolve())}
         showErrorNotification={jest.fn()}
@@ -154,6 +170,7 @@ describe("<AiAgentView />", () => {
       <NonInjectedAiAgentView
         abortAiAgentMessage={abortAiAgentMessage}
         aiAgentTabStore={store}
+        dockStore={createDockStore("tab-fresh")}
         hostedCluster={{ id: "cluster-1", name: { get: () => "cluster-1" } }}
         sendAiAgentMessage={jest.fn(() => Promise.resolve())}
         showErrorNotification={jest.fn()}
@@ -173,6 +190,53 @@ describe("<AiAgentView />", () => {
     expect(setSelectionRangeMock).not.toHaveBeenCalled();
   });
 
+  it("focuses the composer when a fresh session opens", async () => {
+    render(
+      <NonInjectedAiAgentView
+        abortAiAgentMessage={abortAiAgentMessage}
+        aiAgentTabStore={store}
+        dockStore={createDockStore("tab-autofocus")}
+        hostedCluster={{ id: "cluster-1", name: { get: () => "cluster-1" } }}
+        sendAiAgentMessage={jest.fn(() => Promise.resolve())}
+        showErrorNotification={jest.fn()}
+        showSuccessNotification={jest.fn()}
+        tabId="tab-autofocus"
+        userPreferencesState={{ aiAgent: {} } as any}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByPlaceholderText("ask the cluster"));
+    });
+  });
+
+  it("returns focus to the composer after closing history", async () => {
+    store.initTab("tab-history-focus");
+
+    render(
+      <NonInjectedAiAgentView
+        abortAiAgentMessage={abortAiAgentMessage}
+        aiAgentTabStore={store}
+        dockStore={createDockStore("tab-history-focus")}
+        hostedCluster={{ id: "cluster-1", name: { get: () => "cluster-1" } }}
+        sendAiAgentMessage={jest.fn(() => Promise.resolve())}
+        showErrorNotification={jest.fn()}
+        showSuccessNotification={jest.fn()}
+        tabId="tab-history-focus"
+        userPreferencesState={{ aiAgent: {} } as any}
+      />,
+    );
+
+    const composer = screen.getByPlaceholderText("ask the cluster");
+
+    await user.click(screen.getByRole("button", { name: /history/i }));
+    await user.click(screen.getAllByRole("button", { name: "Close session drawer" })[0]);
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(composer);
+    });
+  });
+
   it("creates a new session from the header action and returns focus to the composer", async () => {
     store.initTab("tab-new-session");
     store.appendUserMessage("tab-new-session", "why did node 008 fail again?");
@@ -181,6 +245,7 @@ describe("<AiAgentView />", () => {
       <NonInjectedAiAgentView
         abortAiAgentMessage={abortAiAgentMessage}
         aiAgentTabStore={store}
+        dockStore={createDockStore("tab-new-session")}
         hostedCluster={{ id: "cluster-1", name: { get: () => "cluster-1" } }}
         sendAiAgentMessage={jest.fn(() => Promise.resolve())}
         showErrorNotification={jest.fn()}
