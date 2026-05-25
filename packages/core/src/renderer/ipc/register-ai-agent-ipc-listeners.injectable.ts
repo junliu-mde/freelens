@@ -6,8 +6,8 @@
 
 import { getInjectable } from "@ogre-tools/injectable";
 import { aiAgentStreamEventChannel } from "../../features/ai-agent/common/channels";
-import aiAgentTabStoreInjectable from "../components/dock/ai-agent/store.injectable";
 import hostedClusterIdInjectable from "../cluster-frame-context/hosted-cluster-id.injectable";
+import aiAgentTabStoreInjectable from "../components/dock/ai-agent/store.injectable";
 import ipcRendererInjectable from "../utils/channel/ipc-renderer.injectable";
 
 import type { AiAgentStreamEvent } from "../../features/ai-agent/common/channels";
@@ -40,8 +40,11 @@ const applyStreamEvent = (store: AiAgentTabStore, event: AiAgentStreamEvent) => 
     case "tool-call-end":
       store.finishToolCall(event.tabId, event.runId, event.toolCallId, event.name, event.argumentsText);
       break;
+    case "history-compacted":
+      store.replaceConversationHistory(event.tabId, event.runId, event.messages);
+      break;
     case "tool-result":
-      store.appendToolResult(event.tabId, event.runId, event.toolCallId, event.content, event.isError);
+      store.appendToolResult(event.tabId, event.runId, event.toolCallId, event.content, event.isError, event.details);
       break;
     case "run-done":
       store.finishRun(event.tabId, event.runId, "done");

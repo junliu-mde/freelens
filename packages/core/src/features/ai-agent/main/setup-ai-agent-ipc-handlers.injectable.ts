@@ -11,6 +11,7 @@ import { ipcMainHandle, ipcMainOn } from "../../../common/ipc";
 import userPreferencesStateInjectable from "../../user-preferences/common/state.injectable";
 import { aiAgentAbortChannel, aiAgentSendChannel, aiAgentStreamEventChannel } from "../common/channels";
 import { aiAgentClusterIdHeader } from "../common/headers";
+import { AiAgentChatRunRegistry } from "./ai-agent-chat-run-registry";
 import executeAiAgentKubectlToolInjectable from "./execute-ai-agent-kubectl-tool.injectable";
 import { runAiAgentChat } from "./run-ai-agent-chat";
 
@@ -20,10 +21,6 @@ import type { ClusterId } from "../../../common/cluster-types";
 import type { UserPreferencesState } from "../../user-preferences/common/state.injectable";
 import type { AiAgentSendRequest, AiAgentStreamEvent } from "../common/channels";
 import type { ExecuteAiAgentKubectlTool } from "./execute-ai-agent-kubectl-tool.injectable";
-
-const activeRuns = new Map<string, AbortController>();
-
-const getRunKey = (tabId: string, runId: string) => `${tabId}:${runId}`;
 
 const sendToInvokingFrame = (
   event: Electron.IpcMainInvokeEvent,
@@ -54,11 +51,10 @@ const setupAiAgentIpcHandlers = (
   userPreferencesState: UserPreferencesState,
   executeKubectlTool: ExecuteAiAgentKubectlTool,
 ) => {
-  ipcMainHandle(aiAgentSendChannel, async (event, request: AiAgentSendRequest) => {
-    const controller = new AbortController();
-    const runKey = getRunKey(request.tabId, request.runId);
+  const runRegistry = new AiAgentChatRunRegistry();
 
-    activeRuns.set(runKey, controller);
+  ipcMainHandle(aiAgentSendChannel, async (event, request: AiAgentSendRequest) => {
+    const controller = runRegistry.create(request.tabId, request.runId);
 
     const emit = (streamEvent: AiAgentStreamEvent) => {
       sendToInvokingFrame(event, aiAgentStreamEventChannel, streamEvent, logger);
@@ -75,7 +71,7 @@ const setupAiAgentIpcHandlers = (
       );
     } catch (error) {
       if (controller.signal.aborted) {
-        logger.info(`[AI-AGENT] run aborted: ${runKey}`);
+        logger.info(`[AI-AGENT] run aborted: ${request.tabId}:${request.runId}`);
 
         return { ok: true };
       }
@@ -85,18 +81,14 @@ const setupAiAgentIpcHandlers = (
       logger.warn(`[AI-AGENT] stream failed: ${message}`);
       emit({ type: "run-error", tabId: request.tabId, runId: request.runId, error: message });
     } finally {
-      activeRuns.delete(runKey);
+      runRegistry.delete(request.tabId, request.runId);
     }
 
     return { ok: true };
   });
 
   ipcMainOn(aiAgentAbortChannel, (_event, tabId: string, runId: string) => {
-    const controller = activeRuns.get(getRunKey(tabId, runId));
-
-    if (controller && !controller.signal.aborted) {
-      controller.abort("AI Agent run was stopped.");
-    }
+    runRegistry.abort(tabId, runId);
   });
 };
 

@@ -4,88 +4,129 @@
  * Licensed under MIT License. See LICENSE in root directory for more information.
  */
 
-import { observable, reaction } from "mobx";
 import {
   type AiAgentConversationMessage,
   type AiAgentMessage,
   type AiAgentMessagePart,
   type AiAgentRunStatus,
-  deriveAiAgentSessionTitle,
   finalizeAiAgentMessagesForSave,
+  hydrateAiAgentMessages,
   toAiAgentConversationHistory,
 } from "../../../../features/ai-agent/common/transcript";
 import { DockTabStore } from "../dock-tab-store/dock-tab.store";
+import { type AiAgentSession, AiAgentSessionsRepository } from "./sessions-repository";
 
 import type { AiAgentPermissionMode } from "../../../../features/ai-agent/common/channels";
-import type { StorageLayer } from "../../../utils/storage-helper";
+import type { AiAgentToolResultDetails } from "../../../../features/ai-agent/common/tool-result-details";
 import type { TabId } from "../dock/store";
 import type { DockTabStoreDependencies } from "../dock-tab-store/dock-tab.store";
 
+export type { AiAgentSession } from "./sessions-repository";
 export type { AiAgentMessage, AiAgentMessagePart, AiAgentRunStatus };
+
+export type AiAgentTabStatus = "idle" | "streaming" | "waiting-for-tool" | "aborted" | "error";
 
 export interface AiAgentTabData {
   inputDraft: string;
   messages: AiAgentMessage[];
   selectedModelId?: string;
-  status: AiAgentRunStatus;
+  status: AiAgentTabStatus;
   activeRunId?: string;
   clusterId?: string;
   sessionId: string;
   permissionMode: AiAgentPermissionMode;
-}
-
-export interface AiAgentSession {
-  id: string;
-  title: string;
-  messages: AiAgentMessage[];
-  clusterId?: string;
-  permissionMode?: AiAgentPermissionMode;
-  createdAt: number;
-  updatedAt: number;
+  isNearBottom: boolean;
+  hasUnreadBelow: boolean;
+  lastCompactionAt?: number;
+  lastCompactionSummaryPreview?: string;
+  sessionSearch: string;
 }
 
 export interface AiAgentTabStoreDependencies extends DockTabStoreDependencies {}
 
 type MutableAiAgentMessagePart = AiAgentMessagePart;
 
-export interface AiAgentSessionsStorage {
-  sessions: Record<string, AiAgentSession>;
-}
+const defaultUiState = (): Pick<
+  AiAgentTabData,
+  "hasUnreadBelow" | "isNearBottom" | "lastCompactionAt" | "lastCompactionSummaryPreview" | "sessionSearch"
+> => ({
+  isNearBottom: true,
+  hasUnreadBelow: false,
+  lastCompactionAt: undefined,
+  lastCompactionSummaryPreview: undefined,
+  sessionSearch: "",
+});
+
+const createEmptyTabData = (sessionId: string, clusterId?: string): AiAgentTabData => ({
+  inputDraft: "",
+  messages: [],
+  status: "idle",
+  activeRunId: undefined,
+  clusterId,
+  sessionId,
+  permissionMode: "read-only",
+  ...defaultUiState(),
+});
+
+const normalizeAiAgentTabData = (
+  data: Partial<AiAgentTabData> & Pick<AiAgentTabData, "messages" | "inputDraft" | "sessionId" | "permissionMode">,
+): AiAgentTabData => ({
+  inputDraft: data.inputDraft,
+  messages: data.messages,
+  selectedModelId: data.selectedModelId,
+  status: data.status ?? "idle",
+  activeRunId: data.activeRunId,
+  clusterId: data.clusterId,
+  sessionId: data.sessionId,
+  permissionMode: data.permissionMode,
+  isNearBottom: data.isNearBottom ?? true,
+  hasUnreadBelow: data.hasUnreadBelow ?? false,
+  lastCompactionAt: data.lastCompactionAt,
+  lastCompactionSummaryPreview: data.lastCompactionSummaryPreview,
+  sessionSearch: data.sessionSearch ?? "",
+});
+
+const getLastCompactionSummaryPreview = (messages: AiAgentConversationMessage[]) => {
+  const part = [...messages]
+    .reverse()
+    .flatMap((message) => [...message.parts].reverse())
+    .find(
+      (item): item is Extract<AiAgentMessagePart, { type: "compaction_summary" }> => item.type === "compaction_summary",
+    );
+
+  if (!part?.summary?.trim()) {
+    return undefined;
+  }
+
+  const firstLine = part.summary
+    .trim()
+    .split("\n")
+    .find((line) => line.trim());
+
+  if (!firstLine) {
+    return undefined;
+  }
+
+  return firstLine.length > 140 ? `${firstLine.slice(0, 137)}...` : firstLine;
+};
 
 export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
-  private readonly sessions = observable.map<string, AiAgentSession>();
-  private sessionsStorage?: StorageLayer<AiAgentSessionsStorage>;
+  private readonly sessionsRepository: AiAgentSessionsRepository;
 
   constructor(protected readonly dependencies: AiAgentTabStoreDependencies) {
     super(dependencies, {
       storageKey: "ai_agent",
     });
-
-    // Create a separate storage for sessions
-    this.sessionsStorage = this.dependencies.createStorage("ai_agent_sessions", { sessions: {} });
-
-    // Load sessions from storage
-    const stored = this.sessionsStorage.get().sessions;
-
-    for (const [id, session] of Object.entries(stored)) {
-      this.sessions.set(id, session);
-    }
-
-    // Persist sessions on change
-    reaction(
-      () => this.sessionsToJSON(),
-      (data) => {
-        this.sessionsStorage?.set({ sessions: data });
-      },
-    );
+    this.sessionsRepository = new AiAgentSessionsRepository(this.dependencies.createStorage);
   }
 
   protected finalizeDataForSave(data: AiAgentTabData): AiAgentTabData {
     return {
       ...data,
-      status: data.status === "streaming" ? "idle" : data.status,
+      status: "idle",
       activeRunId: undefined,
       messages: finalizeAiAgentMessagesForSave(data.messages),
+      ...defaultUiState(),
     };
   }
 
@@ -93,18 +134,22 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     const existingData = this.getData(tabId);
 
     if (existingData) {
-      return existingData;
+      const normalizedData = normalizeAiAgentTabData(existingData);
+      const needsNormalization =
+        existingData.status === undefined ||
+        existingData.isNearBottom === undefined ||
+        existingData.hasUnreadBelow === undefined ||
+        existingData.sessionSearch === undefined;
+
+      if (needsNormalization) {
+        this.setData(tabId, normalizedData);
+      }
+
+      return normalizedData;
     }
 
     const sessionId = crypto.randomUUID();
-    const data: AiAgentTabData = {
-      inputDraft: "",
-      messages: [],
-      status: "idle",
-      clusterId: undefined,
-      sessionId,
-      permissionMode: "read-only",
-    };
+    const data = createEmptyTabData(sessionId);
 
     this.setData(tabId, data);
     this.saveSession(tabId, sessionId, data.messages, data.clusterId, data.permissionMode);
@@ -113,43 +158,55 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
   }
 
   setInputDraft(tabId: TabId, inputDraft: string): void {
-    const data = this.initTab(tabId);
-
-    this.setData(tabId, {
+    this.updateTab(tabId, (data) => ({
       ...data,
       inputDraft,
-    });
+    }));
   }
 
   setClusterId(tabId: TabId, clusterId: string): void {
-    const data = this.initTab(tabId);
-
-    this.setData(tabId, {
+    const nextData = this.updateTab(tabId, (data) => ({
       ...data,
       clusterId,
-    });
+    }));
+
+    this.saveSession(tabId, nextData.sessionId, nextData.messages, nextData.clusterId, nextData.permissionMode);
   }
 
   setPermissionMode(tabId: TabId, permissionMode: AiAgentPermissionMode): void {
-    const data = this.initTab(tabId);
-
-    this.setData(tabId, {
+    const nextData = this.updateTab(tabId, (data) => ({
       ...data,
       permissionMode,
-    });
+    }));
+
+    this.saveSession(tabId, nextData.sessionId, nextData.messages, nextData.clusterId, nextData.permissionMode);
   }
 
   togglePermissionMode(tabId: TabId): void {
     const data = this.initTab(tabId);
 
-    this.setData(tabId, {
+    this.setPermissionMode(tabId, data.permissionMode === "read-only" ? "read-write" : "read-only");
+  }
+
+  setSessionSearch(tabId: TabId, sessionSearch: string): void {
+    this.updateTab(tabId, (data) => ({
       ...data,
-      permissionMode: data.permissionMode === "read-only" ? "read-write" : "read-only",
-    });
+      sessionSearch,
+    }));
+  }
+
+  setScrollState(tabId: TabId, state: Partial<Pick<AiAgentTabData, "hasUnreadBelow" | "isNearBottom">>): void {
+    const nextState = Object.fromEntries(Object.entries(state).filter(([, value]) => value !== undefined)) as Partial<
+      Pick<AiAgentTabData, "hasUnreadBelow" | "isNearBottom">
+    >;
+
+    this.updateTab(tabId, (data) => ({
+      ...data,
+      ...nextState,
+    }));
   }
 
   appendUserMessage(tabId: TabId, text: string): AiAgentMessage {
-    const data = this.initTab(tabId);
     const message: AiAgentMessage = {
       id: crypto.randomUUID(),
       role: "user",
@@ -163,17 +220,16 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
       ],
     };
 
-    this.setData(tabId, {
+    this.updateTab(tabId, (data) => ({
       ...data,
       inputDraft: "",
       messages: [...data.messages, message],
-    });
+    }));
 
     return message;
   }
 
   startAssistantMessage(tabId: TabId, runId: string): AiAgentMessage {
-    const data = this.initTab(tabId);
     const message: AiAgentMessage = {
       id: crypto.randomUUID(),
       role: "assistant",
@@ -188,113 +244,168 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
       ],
     };
 
-    this.setData(tabId, {
+    this.updateTab(tabId, (data) => ({
       ...data,
       status: "streaming",
       activeRunId: runId,
       messages: [...data.messages, message],
-    });
+    }));
 
     return message;
   }
 
   appendTextDelta(tabId: TabId, runId: string, delta: string): void {
-    const data = this.initTab(tabId);
+    this.updateAssistantMessage(tabId, runId, "streaming", (message) => {
+      const parts = [...message.parts];
+      const lastPart = parts[parts.length - 1];
 
-    this.setData(tabId, {
-      ...data,
-      messages: data.messages.map((message) => {
-        if (message.role !== "assistant" || message.runId !== runId) {
-          return message;
-        }
-
-        const parts = [...message.parts];
-        const lastPart = parts[parts.length - 1];
-
-        if (lastPart?.type === "text") {
-          parts[parts.length - 1] = {
-            ...lastPart,
-            text: lastPart.text + delta,
-          };
-        } else {
-          parts.push({
-            type: "text",
-            text: delta,
-          });
-        }
-
-        return {
-          ...message,
-          parts,
+      if (lastPart?.type === "text") {
+        parts[parts.length - 1] = {
+          ...lastPart,
+          text: lastPart.text + delta,
         };
-      }),
+      } else {
+        parts.push({
+          type: "text",
+          text: delta,
+        });
+      }
+
+      return {
+        ...message,
+        parts,
+      };
     });
   }
 
   startThinking(tabId: TabId, runId: string): void {
-    this.appendAssistantPart(tabId, runId, {
-      type: "thinking",
-      text: "",
-      done: false,
-    });
+    this.appendAssistantPart(
+      tabId,
+      runId,
+      {
+        type: "thinking",
+        text: "",
+        done: false,
+      },
+      "streaming",
+    );
   }
 
   appendThinkingDelta(tabId: TabId, runId: string, delta: string): void {
-    this.updateLastAssistantPart(tabId, runId, "thinking", (part) => ({
-      ...part,
-      text: part.text + delta,
-    }));
+    this.updateLastAssistantPart(
+      tabId,
+      runId,
+      "thinking",
+      (part) => ({
+        ...part,
+        text: part.text + delta,
+      }),
+      "streaming",
+    );
   }
 
   finishThinking(tabId: TabId, runId: string): void {
-    this.updateLastAssistantPart(tabId, runId, "thinking", (part) => ({
-      ...part,
-      done: true,
-    }));
+    this.updateLastAssistantPart(
+      tabId,
+      runId,
+      "thinking",
+      (part) => ({
+        ...part,
+        done: true,
+      }),
+      "streaming",
+    );
   }
 
   startToolCall(tabId: TabId, runId: string, toolCallId: string, name = "tool_call"): void {
-    this.appendAssistantPart(tabId, runId, {
-      type: "tool_call",
-      toolCallId,
-      name,
-      argumentsText: "",
-      done: false,
-    });
+    this.appendAssistantPart(
+      tabId,
+      runId,
+      {
+        type: "tool_call",
+        toolCallId,
+        name,
+        argumentsText: "",
+        done: false,
+        startedAt: Date.now(),
+      },
+      "waiting-for-tool",
+    );
   }
 
   appendToolCallDelta(tabId: TabId, runId: string, delta: string): void {
-    this.updateLastAssistantPart(tabId, runId, "tool_call", (part) => ({
-      ...part,
-      argumentsText: part.argumentsText + delta,
-    }));
+    this.updateLastAssistantPart(
+      tabId,
+      runId,
+      "tool_call",
+      (part) => ({
+        ...part,
+        argumentsText: part.argumentsText + delta,
+      }),
+      "waiting-for-tool",
+    );
   }
 
   finishToolCall(tabId: TabId, runId: string, toolCallId: string, name: string, argumentsText: string): void {
-    this.updateLastAssistantPart(tabId, runId, "tool_call", (part) => ({
-      ...part,
-      toolCallId,
-      name,
-      argumentsText,
-      done: true,
-    }));
+    this.updateLastAssistantPart(
+      tabId,
+      runId,
+      "tool_call",
+      (part) => ({
+        ...part,
+        toolCallId,
+        name,
+        argumentsText,
+        done: true,
+        runningAt: part.runningAt ?? Date.now(),
+      }),
+      "waiting-for-tool",
+    );
   }
 
-  appendToolResult(tabId: TabId, runId: string, toolCallId: string, content: string, isError: boolean): void {
-    this.appendAssistantPart(tabId, runId, {
-      type: "tool_result",
-      toolCallId,
-      content,
-      isError,
-    });
+  appendToolResult(
+    tabId: TabId,
+    runId: string,
+    toolCallId: string,
+    content: string,
+    isError: boolean,
+    details?: AiAgentToolResultDetails,
+  ): void {
+    this.appendAssistantPart(
+      tabId,
+      runId,
+      {
+        type: "tool_result",
+        toolCallId,
+        content,
+        isError,
+        details,
+        completedAt: Date.now(),
+      },
+      "waiting-for-tool",
+    );
+  }
+
+  replaceConversationHistory(tabId: TabId, runId: string, history: AiAgentConversationMessage[]): void {
+    const data = this.initTab(tabId);
+    const activeAssistantMessage = data.messages.find(
+      (message) => message.role === "assistant" && message.runId === runId && message.status === "streaming",
+    );
+    const nextData = {
+      ...data,
+      messages: [...hydrateAiAgentMessages(history), ...(activeAssistantMessage ? [activeAssistantMessage] : [])],
+      lastCompactionAt: Date.now(),
+      lastCompactionSummaryPreview: getLastCompactionSummaryPreview(history),
+    };
+
+    this.setData(tabId, nextData);
+    this.saveSession(tabId, nextData.sessionId, nextData.messages, nextData.clusterId, nextData.permissionMode);
   }
 
   finishRun(tabId: TabId, runId: string, status: Exclude<AiAgentRunStatus, "idle" | "streaming">): void {
-    const data = this.initTab(tabId);
-
-    this.setData(tabId, {
+    const nextData = this.updateTab(tabId, (data) => ({
       ...data,
-      status,
+      status: status === "done" ? "idle" : status,
       activeRunId: data.activeRunId === runId ? undefined : data.activeRunId,
       messages: data.messages.map((message) =>
         message.role === "assistant" && message.runId === runId
@@ -304,13 +415,13 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
             }
           : message,
       ),
-    });
+    }));
+
+    this.saveSession(tabId, nextData.sessionId, nextData.messages, nextData.clusterId, nextData.permissionMode);
   }
 
   appendError(tabId: TabId, runId: string, message: string): void {
-    const data = this.initTab(tabId);
-
-    this.setData(tabId, {
+    this.updateTab(tabId, (data) => ({
       ...data,
       messages: data.messages.map((chatMessage) =>
         chatMessage.role === "assistant" && chatMessage.runId === runId
@@ -326,111 +437,16 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
             }
           : chatMessage,
       ),
-    });
+    }));
   }
 
   clear(tabId: TabId): void {
     const data = this.initTab(tabId);
 
-    // Save current session before clearing
     this.saveSession(tabId, data.sessionId, data.messages, data.clusterId, data.permissionMode);
-
-    // Start a new session
-    const sessionId = crypto.randomUUID();
-
-    this.setData(tabId, {
-      inputDraft: "",
-      messages: [],
-      status: "idle",
-      clusterId: data.clusterId,
-      sessionId,
-      permissionMode: "read-only",
-    });
+    this.setData(tabId, createEmptyTabData(crypto.randomUUID(), data.clusterId));
   }
 
-  private appendAssistantPart(tabId: TabId, runId: string, part: MutableAiAgentMessagePart): void {
-    const data = this.initTab(tabId);
-
-    this.setData(tabId, {
-      ...data,
-      messages: data.messages.map((message) =>
-        message.role === "assistant" && message.runId === runId
-          ? {
-              ...message,
-              parts: [...message.parts, part],
-            }
-          : message,
-      ),
-    });
-  }
-
-  private updateLastAssistantPart<TType extends AiAgentMessagePart["type"]>(
-    tabId: TabId,
-    runId: string,
-    type: TType,
-    update: (part: Extract<AiAgentMessagePart, { type: TType }>) => Extract<AiAgentMessagePart, { type: TType }>,
-  ): void {
-    const data = this.initTab(tabId);
-
-    this.setData(tabId, {
-      ...data,
-      messages: data.messages.map((message) => {
-        if (message.role !== "assistant" || message.runId !== runId) {
-          return message;
-        }
-
-        const index = message.parts.findLastIndex((part) => part.type === type);
-
-        if (index < 0) {
-          return message;
-        }
-
-        const parts = [...message.parts];
-        parts[index] = update(parts[index] as Extract<AiAgentMessagePart, { type: TType }>);
-
-        return {
-          ...message,
-          parts,
-        };
-      }),
-    });
-  }
-
-  // ── Session management ──────────────────────────────────────────────
-
-  private sessionsToJSON(): Record<string, AiAgentSession> {
-    return Object.fromEntries(this.sessions);
-  }
-
-  private saveSession(
-    tabId: TabId,
-    sessionId: string,
-    messages: AiAgentMessage[],
-    clusterId?: string,
-    permissionMode?: AiAgentPermissionMode,
-  ): void {
-    if (!messages.length) return;
-
-    const existing = this.sessions.get(sessionId);
-    const title = this.deriveSessionTitle(messages);
-    const now = Date.now();
-
-    this.sessions.set(sessionId, {
-      id: sessionId,
-      title,
-      messages: finalizeAiAgentMessagesForSave(messages),
-      clusterId,
-      permissionMode: permissionMode ?? existing?.permissionMode,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-    });
-  }
-
-  private deriveSessionTitle(messages: AiAgentMessage[]): string {
-    return deriveAiAgentSessionTitle(messages);
-  }
-
-  /** Auto-save current session when messages change */
   autoSaveSession(tabId: TabId): void {
     const data = this.getData(tabId);
 
@@ -443,30 +459,30 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     return toAiAgentConversationHistory(this.initTab(tabId).messages);
   }
 
+  getSession(sessionId: string) {
+    return this.sessionsRepository.get(sessionId);
+  }
+
   getSessionsForCluster(clusterId?: string): AiAgentSession[] {
-    const sessions = Array.from(this.sessions.values());
+    return this.sessionsRepository.listForCluster(clusterId);
+  }
 
-    if (!clusterId) return sessions.sort((a, b) => b.updatedAt - a.updatedAt);
-
-    return sessions.filter((s) => !s.clusterId || s.clusterId === clusterId).sort((a, b) => b.updatedAt - a.updatedAt);
+  renameSession(sessionId: string, title: string): void {
+    this.sessionsRepository.rename(sessionId, title);
   }
 
   switchToSession(tabId: TabId, sessionId: string): void {
     const data = this.initTab(tabId);
-    const session = this.sessions.get(sessionId);
+    const session = this.sessionsRepository.get(sessionId);
 
-    if (!session) return;
+    if (!session) {
+      return;
+    }
 
-    // Save current session first
-    this.saveSession(tabId, data.sessionId, data.messages, data.clusterId);
-
-    // Load the target session
+    this.saveSession(tabId, data.sessionId, data.messages, data.clusterId, data.permissionMode);
     this.setData(tabId, {
-      inputDraft: "",
+      ...createEmptyTabData(session.id, session.clusterId ?? data.clusterId),
       messages: session.messages,
-      status: "idle",
-      clusterId: session.clusterId ?? data.clusterId,
-      sessionId: session.id,
       permissionMode: session.permissionMode ?? "read-only",
     });
   }
@@ -475,7 +491,98 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     this.clear(tabId);
   }
 
-  deleteSession(sessionId: string): void {
-    this.sessions.delete(sessionId);
+  deleteSession(tabId: TabId, sessionId: string): void {
+    const data = this.initTab(tabId);
+
+    this.sessionsRepository.delete(sessionId);
+
+    if (data.sessionId !== sessionId) {
+      return;
+    }
+
+    const nextSession = this.sessionsRepository.listForCluster(data.clusterId)[0];
+
+    if (nextSession) {
+      this.setData(tabId, {
+        ...createEmptyTabData(nextSession.id, nextSession.clusterId ?? data.clusterId),
+        messages: nextSession.messages,
+        permissionMode: nextSession.permissionMode ?? "read-only",
+      });
+
+      return;
+    }
+
+    this.setData(tabId, createEmptyTabData(crypto.randomUUID(), data.clusterId));
+  }
+
+  private updateTab(tabId: TabId, update: (data: AiAgentTabData) => AiAgentTabData) {
+    const nextData = update(this.initTab(tabId));
+
+    this.setData(tabId, nextData);
+
+    return nextData;
+  }
+
+  private updateAssistantMessage(
+    tabId: TabId,
+    runId: string,
+    status: Extract<AiAgentTabStatus, "streaming" | "waiting-for-tool">,
+    update: (message: AiAgentMessage) => AiAgentMessage,
+  ) {
+    this.updateTab(tabId, (data) => ({
+      ...data,
+      status,
+      messages: data.messages.map((message) =>
+        message.role === "assistant" && message.runId === runId ? update(message) : message,
+      ),
+    }));
+  }
+
+  private appendAssistantPart(
+    tabId: TabId,
+    runId: string,
+    part: MutableAiAgentMessagePart,
+    status: Extract<AiAgentTabStatus, "streaming" | "waiting-for-tool">,
+  ): void {
+    this.updateAssistantMessage(tabId, runId, status, (message) => ({
+      ...message,
+      parts: [...message.parts, part],
+    }));
+  }
+
+  private updateLastAssistantPart<TType extends AiAgentMessagePart["type"]>(
+    tabId: TabId,
+    runId: string,
+    type: TType,
+    update: (part: Extract<AiAgentMessagePart, { type: TType }>) => Extract<AiAgentMessagePart, { type: TType }>,
+    status: Extract<AiAgentTabStatus, "streaming" | "waiting-for-tool">,
+  ): void {
+    this.updateAssistantMessage(tabId, runId, status, (message) => {
+      const index = message.parts.findLastIndex((part) => part.type === type);
+
+      if (index < 0) {
+        return message;
+      }
+
+      const parts = [...message.parts];
+
+      parts[index] = update(parts[index] as Extract<AiAgentMessagePart, { type: TType }>);
+
+      return {
+        ...message,
+        parts,
+      };
+    });
+  }
+
+  private saveSession(
+    tabId: TabId,
+    sessionId: string,
+    messages: AiAgentMessage[],
+    clusterId?: string,
+    permissionMode?: AiAgentPermissionMode,
+  ): void {
+    void tabId;
+    this.sessionsRepository.save(sessionId, messages, clusterId, permissionMode);
   }
 }

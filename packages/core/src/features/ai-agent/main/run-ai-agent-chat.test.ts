@@ -16,6 +16,7 @@ const Type = {
 jest.mock(
   "@earendil-works/pi-ai",
   () => ({
+    completeSimple: jest.fn(),
     stream: jest.fn(),
     validateToolCall: jest.fn(),
     Type,
@@ -23,7 +24,7 @@ jest.mock(
   { virtual: true },
 );
 
-import { stream, validateToolCall } from "@earendil-works/pi-ai";
+import { completeSimple, stream, validateToolCall } from "@earendil-works/pi-ai";
 import { runAiAgentChat } from "./run-ai-agent-chat";
 
 import type { AiAgentSendRequest, AiAgentStreamEvent } from "../common/channels";
@@ -69,15 +70,21 @@ describe("run-ai-agent-chat", () => {
     maxTokens: 512,
     enableKubectlTools: true,
     maxToolIterations: 1,
+    enableCompaction: true,
+    compactionReserveTokens: 16_384,
+    compactionKeepRecentTokens: 20_000,
   };
 
+  let completeSimpleMock: jest.MockedFunction<typeof completeSimple>;
   let streamMock: jest.MockedFunction<typeof stream>;
   let validateToolCallMock: jest.MockedFunction<typeof validateToolCall>;
 
   beforeEach(() => {
+    completeSimpleMock = completeSimple as jest.MockedFunction<typeof completeSimple>;
     streamMock = stream as jest.MockedFunction<typeof stream>;
     validateToolCallMock = validateToolCall as jest.MockedFunction<typeof validateToolCall>;
 
+    completeSimpleMock.mockReset();
     streamMock.mockReset();
     validateToolCallMock.mockReset();
     validateToolCallMock.mockImplementation(() => undefined);
@@ -247,5 +254,91 @@ describe("run-ai-agent-chat", () => {
         isError: true,
       },
     ]);
+  });
+
+  it("compacts long history before streaming and emits the replacement history", async () => {
+    const executeKubectlTool = jest.fn((async () => ({
+      content: "unused",
+      isError: false,
+    })) as ExecuteAiAgentKubectlTool);
+    const events: AiAgentStreamEvent[] = [];
+    const requestWithLongHistory: AiAgentSendRequest = {
+      ...request,
+      messages: [
+        {
+          role: "user",
+          createdAt: 1,
+          parts: [{ type: "text", text: "old context ".repeat(500) }],
+        },
+        {
+          role: "assistant",
+          createdAt: 2,
+          parts: [{ type: "text", text: "old answer ".repeat(500) }],
+        },
+        {
+          role: "user",
+          createdAt: 3,
+          parts: [{ type: "text", text: "latest question" }],
+        },
+      ],
+    };
+
+    completeSimpleMock.mockResolvedValue({
+      role: "assistant",
+      content: [{ type: "text", text: "## Goal\nKeep debugging the cluster" }],
+      api: "openai-completions",
+      provider: "custom-openai-compat",
+      model: "some-model",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: Date.now(),
+    } as never);
+    streamMock.mockReturnValue(
+      (async function* () {
+        yield {
+          type: "done",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "done" }],
+            timestamp: Date.now(),
+          },
+        };
+      })() as never,
+    );
+
+    await runAiAgentChat(
+      requestWithLongHistory,
+      {
+        ...settings,
+        compactionReserveTokens: 127_500,
+        compactionKeepRecentTokens: 1,
+      },
+      "cluster-1" as never,
+      executeKubectlTool,
+      (event) => events.push(event),
+      new AbortController().signal,
+    );
+
+    expect(completeSimpleMock).toHaveBeenCalledTimes(1);
+    expect(events.some((event) => event.type === "history-compacted")).toBe(true);
+    expect(streamMock).toHaveBeenCalledTimes(1);
+
+    const [, context] = streamMock.mock.calls[0];
+
+    expect(context.messages[0]).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("The conversation history before this point was compacted"),
+    });
+    expect(context.messages[1]).toMatchObject({
+      role: "user",
+      content: "latest question",
+    });
   });
 });

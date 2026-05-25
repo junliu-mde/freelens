@@ -13,6 +13,8 @@ import type {
   UserMessage,
 } from "@earendil-works/pi-ai";
 
+import type { AiAgentToolResultDetails } from "./tool-result-details";
+
 export type AiAgentMessageRole = "user" | "assistant";
 
 export type AiAgentRunStatus = "idle" | "streaming" | "done" | "error" | "aborted";
@@ -34,6 +36,8 @@ export interface AiAgentToolCallPart {
   name: string;
   argumentsText: string;
   done: boolean;
+  startedAt?: number;
+  runningAt?: number;
 }
 
 export interface AiAgentToolResultPart {
@@ -41,6 +45,14 @@ export interface AiAgentToolResultPart {
   toolCallId: string;
   content: string;
   isError: boolean;
+  details?: AiAgentToolResultDetails;
+  completedAt?: number;
+}
+
+export interface AiAgentCompactionSummaryPart {
+  type: "compaction_summary";
+  summary: string;
+  tokensBefore: number;
 }
 
 export interface AiAgentErrorPart {
@@ -53,6 +65,7 @@ export type AiAgentMessagePart =
   | AiAgentThinkingPart
   | AiAgentToolCallPart
   | AiAgentToolResultPart
+  | AiAgentCompactionSummaryPart
   | AiAgentErrorPart;
 
 export interface AiAgentConversationMessage {
@@ -88,12 +101,22 @@ const emptyUsage = {
   },
 };
 
+export const aiAgentCompactionSummaryPrefix = `The conversation history before this point was compacted into the following summary:
+
+<summary>
+`;
+
+export const aiAgentCompactionSummarySuffix = `
+</summary>`;
+
 const maxSessionTitleLength = 60;
 
-const hasText = (value: string) => value.trim().length > 0;
+const hasText = (value: string | undefined) => Boolean(value?.trim().length);
 
-const parseToolCallArguments = (argumentsText: string): Record<string, unknown> => {
-  const trimmed = argumentsText.trim();
+const isTextPart = (part: AiAgentMessagePart): part is AiAgentTextPart => part.type === "text";
+
+const parseToolCallArguments = (argumentsText: string | undefined): Record<string, unknown> => {
+  const trimmed = argumentsText?.trim() ?? "";
 
   if (!trimmed) {
     return {};
@@ -124,7 +147,7 @@ const getToolCallNamesById = (parts: AiAgentMessagePart[]) => {
   return toolCallNamesById;
 };
 
-const createUserMessage = (content: string, timestamp: number): UserMessage => ({
+const createUserMessage = (content: UserMessage["content"], timestamp: number): UserMessage => ({
   role: "user",
   content,
   timestamp,
@@ -172,7 +195,21 @@ const flushAssistantContent = (
 };
 
 const toUserMessage = (message: AiAgentConversationMessage): UserMessage | undefined => {
-  const content = getAiAgentTextFromParts(message.parts).trim();
+  const content = message.parts
+    .flatMap((part) => {
+      switch (part.type) {
+        case "text":
+          return hasText(part.text) ? [part.text] : [];
+        case "compaction_summary":
+          return hasText(part.summary)
+            ? [`${aiAgentCompactionSummaryPrefix}${part.summary}${aiAgentCompactionSummarySuffix}`]
+            : [];
+        default:
+          return [];
+      }
+    })
+    .join("\n\n")
+    .trim();
 
   if (!content) {
     return undefined;
@@ -218,6 +255,14 @@ const toAssistantMessages = (
           createToolResultMessage(part, toolCallNamesById.get(part.toolCallId) ?? "tool_call", message.createdAt),
         );
         break;
+      case "compaction_summary":
+        if (hasText(part.summary)) {
+          assistantContent.push({
+            type: "text",
+            text: `${aiAgentCompactionSummaryPrefix}${part.summary}${aiAgentCompactionSummarySuffix}`,
+          });
+        }
+        break;
       case "error":
         if (hasText(part.message)) {
           assistantContent.push({ type: "text", text: `Error: ${part.message}` });
@@ -233,12 +278,31 @@ const toAssistantMessages = (
 
 export const getAiAgentTextFromParts = (parts: AiAgentMessagePart[]) =>
   parts
-    .filter((part): part is AiAgentTextPart => part.type === "text")
-    .map((part) => part.text)
+    .filter(isTextPart)
+    .map((part) => part.text ?? "")
     .join("");
 
 export const getAiAgentTextFromMessage = (message: Pick<AiAgentConversationMessage, "parts">) =>
   getAiAgentTextFromParts(message.parts);
+
+export const isAiAgentCompactionMessage = (message: Pick<AiAgentConversationMessage, "role" | "parts">) =>
+  message.role === "user" &&
+  message.parts.length > 0 &&
+  message.parts.every((part) => part.type === "compaction_summary");
+
+export const getAiAgentFirstRealUserPrompt = (
+  messages: ReadonlyArray<Pick<AiAgentConversationMessage, "role" | "parts">>,
+) =>
+  messages.find(
+    (message) =>
+      message.role === "user" && !isAiAgentCompactionMessage(message) && getAiAgentTextFromMessage(message).trim(),
+  );
+
+export const getAiAgentUserTurnCount = (messages: ReadonlyArray<Pick<AiAgentConversationMessage, "role" | "parts">>) =>
+  messages.filter(
+    (message) =>
+      message.role === "user" && !isAiAgentCompactionMessage(message) && getAiAgentTextFromMessage(message).trim(),
+  ).length;
 
 export const hasAiAgentMessageContent = (message: Pick<AiAgentConversationMessage, "parts">) =>
   message.parts.some((part) => {
@@ -251,6 +315,8 @@ export const hasAiAgentMessageContent = (message: Pick<AiAgentConversationMessag
         return part.done || hasText(part.argumentsText);
       case "tool_result":
         return hasText(part.content) || part.isError;
+      case "compaction_summary":
+        return hasText(part.summary);
       case "error":
         return hasText(part.message);
     }
@@ -279,6 +345,17 @@ export const toAiAgentLlmMessages = (
       : toAssistantMessages(message, metadata);
   });
 
+export const hydrateAiAgentMessages = (messages: AiAgentConversationMessage[]): AiAgentMessage[] =>
+  messages
+    .filter((message) => hasAiAgentMessageContent(message))
+    .map((message, index) => ({
+      id: `history-${message.createdAt}-${index}`,
+      role: message.role,
+      createdAt: message.createdAt,
+      status: "done" as const,
+      parts: message.parts.map((part) => ({ ...part })),
+    }));
+
 export const finalizeAiAgentMessagesForSave = (messages: AiAgentMessage[]): AiAgentMessage[] =>
   messages.map((message) => ({
     ...message,
@@ -288,7 +365,7 @@ export const finalizeAiAgentMessagesForSave = (messages: AiAgentMessage[]): AiAg
 export const deriveAiAgentSessionTitle = (
   messages: ReadonlyArray<Pick<AiAgentConversationMessage, "role" | "parts">>,
 ) => {
-  const firstUserMessage = messages.find((message) => message.role === "user");
+  const firstUserMessage = getAiAgentFirstRealUserPrompt(messages);
 
   if (!firstUserMessage) {
     return "New session";

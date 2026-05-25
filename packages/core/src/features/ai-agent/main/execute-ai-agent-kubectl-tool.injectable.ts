@@ -4,22 +4,31 @@
  */
 
 import { getInjectable } from "@ogre-tools/injectable";
-import execFileInjectable from "../../../common/fs/exec-file.injectable";
+import spawnInjectable from "../../../main/child-process/spawn.injectable";
 import kubeconfigManagerInjectable from "../../../main/kubeconfig-manager/kubeconfig-manager.injectable";
 import bundledKubectlInjectable from "../../../main/kubectl/bundled-kubectl.injectable";
 import getClusterByIdInjectable from "../../cluster/storage/common/get-by-id.injectable";
+import { killProcessTree, waitForChildProcess } from "./ai-agent-process";
+import {
+  AiAgentOutputAccumulator,
+  createAiAgentToolExecutionPayload,
+  createAiAgentToolExecutionPayloadFromSnapshot,
+} from "./ai-agent-tool-output";
+import { getAiAgentKubectlToolDefinition } from "./kubectl-tools";
 
 import type { ToolCall } from "@earendil-works/pi-ai";
 import type { DiContainerForInjection } from "@ogre-tools/injectable";
 
 import type { ClusterId } from "../../../common/cluster-types";
-import type { ExecFile, ExecFileError } from "../../../common/fs/exec-file.injectable";
+import type { Spawn } from "../../../main/child-process/spawn.injectable";
 import type { Kubectl } from "../../../main/kubectl/kubectl";
 import type { GetClusterById } from "../../cluster/storage/common/get-by-id.injectable";
+import type { AiAgentToolResultDetails } from "../common/tool-result-details";
 
 export interface AiAgentToolExecutionResult {
   content: string;
   isError: boolean;
+  details?: AiAgentToolResultDetails;
 }
 
 export type ExecuteAiAgentKubectlTool = (
@@ -28,43 +37,17 @@ export type ExecuteAiAgentKubectlTool = (
   signal?: AbortSignal,
 ) => Promise<AiAgentToolExecutionResult>;
 
-const maxOutputLength = 16_000;
 const kubectlToolTimeoutMs = 30_000;
-const allowedResourcePattern = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*(?:\/[a-z][a-z0-9.-]*)?$/i;
 
-const stringifyArg = (value: unknown): string | undefined =>
-  typeof value === "string" && value.trim() ? value.trim() : undefined;
-const booleanArg = (value: unknown): boolean => value === true;
-const numberArg = (value: unknown): number | undefined =>
-  typeof value === "number" && Number.isFinite(value) ? value : undefined;
-
-const clampTailLines = (value: unknown) => Math.max(1, Math.min(500, Math.floor(numberArg(value) ?? 100)));
-
-const validateSafeResource = (resource: string) => {
-  if (!allowedResourcePattern.test(resource)) {
-    throw new Error(`Unsafe resource name: ${resource}`);
+class AiAgentKubectlExecutionError extends Error {
+  constructor(
+    message: string,
+    readonly details?: AiAgentToolResultDetails,
+  ) {
+    super(message);
+    this.name = "AiAgentKubectlExecutionError";
   }
-};
-
-const dangerousManifestPatterns = [
-  /cluster-admin/,
-  /privileged:\s*true/,
-  /hostPath:/,
-  /hostPID:\s*true/,
-  /hostNetwork:\s*true/,
-  /hostIPC:\s*true/,
-];
-
-const validateSafeManifest = (manifest: string) => {
-  for (const pattern of dangerousManifestPatterns) {
-    if (pattern.test(manifest)) {
-      throw new Error(
-        `Manifest contains potentially dangerous pattern (${pattern.source}). ` +
-          `Apply with explicit confirmation is required for privileged workloads.`,
-      );
-    }
-  }
-};
+}
 
 const getAbortMessage = (signal?: AbortSignal) => {
   const reason = signal?.reason;
@@ -72,203 +55,20 @@ const getAbortMessage = (signal?: AbortSignal) => {
   return typeof reason === "string" && reason ? reason : "AI Agent run was stopped.";
 };
 
-const getKubectlErrorMessage = (error: ExecFileError, signal?: AbortSignal) => {
+const getKubectlErrorMessage = (message: string, timedOut: boolean, signal?: AbortSignal) => {
   if (signal?.aborted) {
     return getAbortMessage(signal);
   }
 
-  if (error.killed && error.message.includes("timed out")) {
+  if (timedOut) {
     return `kubectl command timed out after ${kubectlToolTimeoutMs / 1000}s.`;
   }
 
-  return (error.stderr || error.message).slice(0, maxOutputLength);
-};
-
-const addNamespaceArgs = (args: string[], namespace?: string, allNamespaces?: boolean) => {
-  if (allNamespaces) {
-    args.push("--all-namespaces");
-  } else if (namespace) {
-    args.push("--namespace", namespace);
-  }
-};
-
-const buildKubectlArgs = (toolCall: ToolCall): string[] => {
-  const args = toolCall.arguments;
-
-  switch (toolCall.name) {
-    case "kubectl_get": {
-      const resource = stringifyArg(args.resource);
-
-      if (!resource) {
-        throw new Error("resource is required");
-      }
-
-      validateSafeResource(resource);
-
-      const result = ["get", resource];
-      const name = stringifyArg(args.name);
-
-      if (name) {
-        result.push(name);
-      }
-
-      addNamespaceArgs(result, stringifyArg(args.namespace), booleanArg(args.allNamespaces));
-
-      const selector = stringifyArg(args.selector);
-
-      if (selector) {
-        result.push("--selector", selector);
-      }
-
-      const output = stringifyArg(args.output);
-
-      if (output === "wide") {
-        result.push("--output", "wide");
-      } else if (output === "yaml" || output === "json") {
-        result.push("--output", output);
-      }
-
-      return result;
-    }
-
-    case "kubectl_describe": {
-      const resource = stringifyArg(args.resource);
-      const name = stringifyArg(args.name);
-
-      if (!resource || !name) {
-        throw new Error("resource and name are required");
-      }
-
-      validateSafeResource(resource);
-
-      const result = ["describe", resource, name];
-
-      addNamespaceArgs(result, stringifyArg(args.namespace));
-
-      return result;
-    }
-
-    case "kubectl_logs": {
-      const pod = stringifyArg(args.pod);
-
-      if (!pod) {
-        throw new Error("pod is required");
-      }
-
-      const result = ["logs", pod, "--tail", String(clampTailLines(args.tailLines))];
-
-      addNamespaceArgs(result, stringifyArg(args.namespace));
-
-      const container = stringifyArg(args.container);
-
-      if (container) {
-        result.push("--container", container);
-      }
-
-      if (booleanArg(args.previous)) {
-        result.push("--previous");
-      }
-
-      return result;
-    }
-
-    case "kubectl_top": {
-      const resource = stringifyArg(args.resource);
-
-      if (resource !== "pods" && resource !== "nodes") {
-        throw new Error("resource must be pods or nodes");
-      }
-
-      const result = ["top", resource];
-
-      if (resource === "pods") {
-        addNamespaceArgs(result, stringifyArg(args.namespace), booleanArg(args.allNamespaces));
-      }
-
-      return result;
-    }
-
-    // ── Write tools (only available in read-write mode) ──────────────
-
-    case "kubectl_apply": {
-      const manifest = stringifyArg(args.manifest);
-
-      if (!manifest) {
-        throw new Error("manifest is required");
-      }
-
-      validateSafeManifest(manifest);
-
-      const result = ["apply", "--filename", "-"];
-
-      addNamespaceArgs(result, stringifyArg(args.namespace));
-
-      if (booleanArg(args.dryRun)) {
-        result.push("--dry-run=client");
-      }
-
-      return result;
-    }
-
-    case "kubectl_delete": {
-      const resource = stringifyArg(args.resource);
-      const name = stringifyArg(args.name);
-
-      if (!resource || !name) {
-        throw new Error("resource and name are required");
-      }
-
-      validateSafeResource(resource);
-
-      const result = ["delete", resource, name];
-
-      addNamespaceArgs(result, stringifyArg(args.namespace));
-
-      return result;
-    }
-
-    case "kubectl_scale": {
-      const resource = stringifyArg(args.resource);
-      const name = stringifyArg(args.name);
-      const replicas = numberArg(args.replicas);
-
-      if (!resource || !name || replicas === undefined) {
-        throw new Error("resource, name, and replicas are required");
-      }
-
-      validateSafeResource(resource);
-
-      const result = ["scale", resource, name, "--replicas", String(replicas)];
-
-      addNamespaceArgs(result, stringifyArg(args.namespace));
-
-      return result;
-    }
-
-    case "kubectl_rollout_restart": {
-      const resource = stringifyArg(args.resource);
-      const name = stringifyArg(args.name);
-
-      if (!resource || !name) {
-        throw new Error("resource and name are required");
-      }
-
-      validateSafeResource(resource);
-
-      const result = ["rollout", "restart", resource, name];
-
-      addNamespaceArgs(result, stringifyArg(args.namespace));
-
-      return result;
-    }
-
-    default:
-      throw new Error(`Unsupported tool: ${toolCall.name}`);
-  }
+  return message;
 };
 
 const runKubectl = async (
-  execFile: ExecFile,
+  spawn: Spawn,
   kubectl: Kubectl,
   kubeconfigPath: string,
   args: string[],
@@ -277,18 +77,99 @@ const runKubectl = async (
 ) => {
   const kubectlPath = await kubectl.getPath();
   const commandArgs = ["--kubeconfig", kubeconfigPath, ...args, "--request-timeout=20s"];
-  const result = await execFile(kubectlPath, commandArgs, {
-    maxBuffer: 1024 * 1024 * 8,
-    timeout: kubectlToolTimeoutMs,
-    ...(signal ? { signal } : {}),
-    ...(stdin === undefined ? {} : { input: stdin }),
+  const stdout = new AiAgentOutputAccumulator({ tempFilePrefix: "freelens-ai-agent-stdout" });
+  const stderr = new AiAgentOutputAccumulator({ tempFilePrefix: "freelens-ai-agent-stderr" });
+  const child = spawn(kubectlPath, commandArgs, {
+    stdio: ["pipe", "pipe", "pipe"],
+    detached: process.platform !== "win32",
+    windowsHide: true,
   });
+  let timedOut = false;
+  let timeoutHandle: NodeJS.Timeout | undefined;
+  const abortChild = () => {
+    if (child.pid) {
+      killProcessTree(child.pid);
+    }
+  };
 
-  if (result.callWasSuccessful) {
-    return result.response.slice(0, maxOutputLength) || "Command completed with no output.";
+  try {
+    child.stdout?.on("data", (data: Buffer) => stdout.append(data));
+    child.stderr?.on("data", (data: Buffer) => stderr.append(data));
+
+    if (stdin !== undefined) {
+      child.stdin?.end(stdin);
+    } else {
+      child.stdin?.end();
+    }
+
+    if (signal) {
+      if (signal.aborted) {
+        abortChild();
+      } else {
+        signal.addEventListener("abort", abortChild, { once: true });
+      }
+    }
+
+    timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      abortChild();
+    }, kubectlToolTimeoutMs);
+
+    const exitCode = await waitForChildProcess(child);
+
+    stdout.finish();
+    stderr.finish();
+
+    const stdoutSnapshot = stdout.snapshot({ persistIfTruncated: true });
+    const stderrSnapshot = stderr.snapshot({ persistIfTruncated: true });
+
+    await Promise.all([stdout.closeTempFile(), stderr.closeTempFile()]);
+
+    if (signal?.aborted || timedOut) {
+      const payload = createAiAgentToolExecutionPayloadFromSnapshot(
+        `kubectl ${args.join(" ")}`,
+        stderrSnapshot.content ? stderrSnapshot : stdoutSnapshot,
+      );
+
+      throw new AiAgentKubectlExecutionError(
+        getKubectlErrorMessage(payload.content, timedOut, signal),
+        payload.details,
+      );
+    }
+
+    if (exitCode === 0) {
+      return createAiAgentToolExecutionPayloadFromSnapshot(`kubectl ${args.join(" ")}`, stdoutSnapshot);
+    }
+
+    const errorPayload = createAiAgentToolExecutionPayloadFromSnapshot(
+      `kubectl ${args.join(" ")}`,
+      stderrSnapshot.content ? stderrSnapshot : stdoutSnapshot,
+    );
+
+    throw new AiAgentKubectlExecutionError(
+      getKubectlErrorMessage(errorPayload.content, false, signal),
+      errorPayload.details,
+    );
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+
+    if (signal) {
+      signal.removeEventListener("abort", abortChild);
+    }
   }
+};
 
-  throw new Error(getKubectlErrorMessage(result.error, signal));
+const getToolCommand = (toolCall: ToolCall) => {
+  try {
+    const definition = getAiAgentKubectlToolDefinition(toolCall.name);
+    const invocation = definition.buildInvocation(toolCall);
+
+    return `kubectl ${invocation.args.join(" ")}`;
+  } catch {
+    return undefined;
+  }
 };
 
 const createExecuteAiAgentKubectlTool =
@@ -296,7 +177,7 @@ const createExecuteAiAgentKubectlTool =
     di: DiContainerForInjection,
     getClusterById: GetClusterById,
     kubectl: Kubectl,
-    execFile: ExecFile,
+    spawn: Spawn,
   ): ExecuteAiAgentKubectlTool =>
   async (clusterId, toolCall, signal) => {
     try {
@@ -316,21 +197,29 @@ const createExecuteAiAgentKubectlTool =
 
       const kubeconfigManager = di.inject(kubeconfigManagerInjectable, cluster);
       const kubeconfigPath = await kubeconfigManager.ensurePath();
-      const args = buildKubectlArgs(toolCall);
-
-      // kubectl_apply reads manifest from stdin
-      const isApply = toolCall.name === "kubectl_apply";
-      const manifest = isApply ? (stringifyArg(toolCall.arguments.manifest) ?? "") : undefined;
-      const output = await runKubectl(execFile, kubectl, kubeconfigPath, args, signal, manifest);
+      const definition = getAiAgentKubectlToolDefinition(toolCall.name);
+      const invocation = definition.buildInvocation(toolCall);
+      const payload = await runKubectl(spawn, kubectl, kubeconfigPath, invocation.args, signal, invocation.stdin);
 
       return {
-        content: `$ kubectl ${args.join(" ")}\n${output}`,
+        content: payload.content,
         isError: false,
+        details: payload.details,
       };
     } catch (error) {
+      const command = getToolCommand(toolCall);
+      const payload =
+        error instanceof AiAgentKubectlExecutionError
+          ? {
+              content: error.message,
+              details: error.details,
+            }
+          : createAiAgentToolExecutionPayload(command, error instanceof Error ? error.message : String(error));
+
       return {
-        content: error instanceof Error ? error.message : String(error),
+        content: payload.content,
         isError: true,
+        details: payload.details,
       };
     }
   };
@@ -343,7 +232,7 @@ const executeAiAgentKubectlToolInjectable = getInjectable({
       di,
       di.inject(getClusterByIdInjectable),
       di.inject(bundledKubectlInjectable),
-      di.inject(execFileInjectable),
+      di.inject(spawnInjectable),
     ),
 });
 
