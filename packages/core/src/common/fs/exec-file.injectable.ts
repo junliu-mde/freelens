@@ -11,18 +11,23 @@ import type { ExecFileException, ExecFileOptions } from "child_process";
 import type { AsyncResult } from "@freelensapp/utilities";
 
 export type ExecFileError = ExecFileException & { stderr: string };
+export type ExecFileOptionsWithInput = ExecFileOptions & { input?: string | NodeJS.ArrayBufferView };
 
 export interface ExecFile {
   (filePath: string): AsyncResult<string, ExecFileError>;
-  (filePath: string, argsOrOptions: string[] | ExecFileOptions): AsyncResult<string, ExecFileError>;
-  (filePath: string, args: string[], options: ExecFileOptions): AsyncResult<string, ExecFileError>;
+  (filePath: string, argsOrOptions: string[] | ExecFileOptionsWithInput): AsyncResult<string, ExecFileError>;
+  (filePath: string, args: string[], options: ExecFileOptionsWithInput): AsyncResult<string, ExecFileError>;
 }
 
 const execFileInjectable = getInjectable({
   id: "exec-file",
 
   instantiate: (): ExecFile => {
-    return (filePath: string, argsOrOptions?: string[] | ExecFileOptions, maybeOptions?: ExecFileOptions) => {
+    return (
+      filePath: string,
+      argsOrOptions?: string[] | ExecFileOptionsWithInput,
+      maybeOptions?: ExecFileOptionsWithInput,
+    ) => {
       const { args, options } = (() => {
         if (Array.isArray(argsOrOptions)) {
           return {
@@ -36,10 +41,11 @@ const execFileInjectable = getInjectable({
           };
         }
       })();
+      const { input, ...execOptions } = options;
 
       return new Promise((resolve) => {
         try {
-          execFile(filePath, args, options, (error, stdout, stderr) => {
+          const execution = execFile(filePath, args, execOptions, (error, stdout, stderr) => {
             if (error) {
               resolve({
                 callWasSuccessful: false,
@@ -52,6 +58,10 @@ const execFileInjectable = getInjectable({
               });
             }
           });
+
+          if (input !== undefined) {
+            execution.stdin?.end(input);
+          }
         } catch (error) {
           // On Windows, spawn failures such as `spawn UNKNOWN` (errno -4094)
           // are thrown synchronously instead of being passed to the callback.

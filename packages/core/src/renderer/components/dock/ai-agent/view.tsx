@@ -14,14 +14,15 @@ import hljs from "highlight.js/lib/common";
 import { marked } from "marked";
 import { observer } from "mobx-react";
 import React from "react";
+import { deriveAiAgentSessionTitle, getAiAgentTextFromMessage } from "../../../../features/ai-agent/common/transcript";
 import hostedClusterInjectable from "../../../cluster-frame-context/hosted-cluster.injectable";
 import abortAiAgentMessageInjectable from "../../../ipc/abort-ai-agent-message.injectable";
 import sendAiAgentMessageInjectable from "../../../ipc/send-ai-agent-message.injectable";
 import aiAgentTabStoreInjectable from "./store.injectable";
 
-import type { AiAgentMessage, AiAgentMessagePart, AiAgentTabStore } from "./store";
 import type { AbortAiAgentMessage } from "../../../ipc/abort-ai-agent-message.injectable";
 import type { SendAiAgentMessage } from "../../../ipc/send-ai-agent-message.injectable";
+import type { AiAgentMessage, AiAgentMessagePart, AiAgentTabStore } from "./store";
 export interface AiAgentViewProps {
   tabId: string;
 }
@@ -32,12 +33,6 @@ interface Dependencies {
   hostedCluster: { id: string; name: { get(): string } } | undefined;
   sendAiAgentMessage: SendAiAgentMessage;
 }
-
-const getTextFromMessage = (message: AiAgentMessage) =>
-  message.parts
-    .filter((part): part is Extract<AiAgentMessagePart, { type: "text" }> => part.type === "text")
-    .map((part) => part.text)
-    .join("");
 
 const renderer = new marked.Renderer();
 
@@ -151,20 +146,11 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
     aiAgentTabStore.startAssistantMessage(this.props.tabId, runId);
     aiAgentTabStore.autoSaveSession(this.props.tabId);
 
-    const messages = aiAgentTabStore
-      .initTab(this.props.tabId)
-      .messages.filter((message) => message.role === "user" || message.role === "assistant")
-      .map((message) => ({
-        role: message.role,
-        content: getTextFromMessage(message),
-      }))
-      .filter((message) => message.content.trim());
-
     this.props
       .sendAiAgentMessage({
         tabId: this.props.tabId,
         runId,
-        messages,
+        messages: aiAgentTabStore.getConversationMessages(this.props.tabId),
         permissionMode: this.data.permissionMode,
       })
       .catch((error) => {
@@ -356,25 +342,9 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
   };
 
   private getCurrentSessionTitle = (): string => {
-    const { messages } = this.data;
+    const title = deriveAiAgentSessionTitle(this.data.messages);
 
-    if (!messages.length) return "New session";
-
-    const firstUser = messages.find((m) => m.role === "user");
-
-    if (firstUser) {
-      const text = firstUser.parts
-        .filter((p): p is Extract<AiAgentMessagePart, { type: "text" }> => p.type === "text")
-        .map((p) => p.text)
-        .join(" ")
-        .trim();
-
-      if (text) {
-        return text.length > 30 ? `${text.slice(0, 27)}…` : text;
-      }
-    }
-
-    return "New session";
+    return title.length > 30 ? `${title.slice(0, 27)}...` : title;
   };
 
   private formatSessionTime = (timestamp: number): string => {
@@ -390,7 +360,7 @@ class NonInjectedAiAgentView extends React.Component<AiAgentViewProps & Dependen
 
   private renderMessage = (message: AiAgentMessage) => {
     const isUser = message.role === "user";
-    const text = getTextFromMessage(message);
+    const text = getAiAgentTextFromMessage(message);
 
     return (
       <div key={message.id} className={cssNames("AiAgentMessage", { user: isUser, assistant: !isUser })}>

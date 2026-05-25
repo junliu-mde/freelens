@@ -10,15 +10,12 @@ export const aiAgentStreamEventChannel = "ai-agent:stream-event";
 
 export type AiAgentPermissionMode = "read-only" | "read-write";
 
-export interface AiAgentChatMessage {
-  role: "user" | "assistant";
-  content: string;
-}
+import type { AiAgentConversationMessage } from "./transcript";
 
 export interface AiAgentSendRequest {
   tabId: string;
   runId: string;
-  messages: AiAgentChatMessage[];
+  messages: AiAgentConversationMessage[];
   permissionMode: AiAgentPermissionMode;
   metadata?: Record<string, unknown>;
 }
