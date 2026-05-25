@@ -5,7 +5,7 @@
  */
 
 import "@testing-library/jest-dom";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { AiAgentTabStore } from "./store";
@@ -42,6 +42,15 @@ describe("<AiAgentView />", () => {
         randomUUID: jest.fn(() => `uuid-${++uuidCount}`),
       },
     });
+    jest.spyOn(window, "requestAnimationFrame").mockImplementation((callback: FrameRequestCallback) => {
+      callback(0);
+
+      return 0;
+    });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it("switches to read-write immediately from the header toggle", async () => {
@@ -138,5 +147,56 @@ describe("<AiAgentView />", () => {
 
     expect(setSelectionRangeMock).not.toHaveBeenCalled();
     expect(screen.getByPlaceholderText("ask the cluster")).toHaveValue("seedx");
+  });
+
+  it("does not restore draft focus while the first character is being typed into a fresh session", () => {
+    render(
+      <NonInjectedAiAgentView
+        abortAiAgentMessage={abortAiAgentMessage}
+        aiAgentTabStore={store}
+        hostedCluster={{ id: "cluster-1", name: { get: () => "cluster-1" } }}
+        sendAiAgentMessage={jest.fn(() => Promise.resolve())}
+        showErrorNotification={jest.fn()}
+        showSuccessNotification={jest.fn()}
+        tabId="tab-fresh"
+        userPreferencesState={{ aiAgent: {} } as any}
+      />,
+    );
+
+    setSelectionRangeMock.mockClear();
+
+    act(() => {
+      store.setInputDraft("tab-fresh", "继");
+    });
+
+    expect(store.initTab("tab-fresh").inputDraft).toBe("继");
+    expect(setSelectionRangeMock).not.toHaveBeenCalled();
+  });
+
+  it("creates a new session from the header action and returns focus to the composer", async () => {
+    store.initTab("tab-new-session");
+    store.appendUserMessage("tab-new-session", "why did node 008 fail again?");
+
+    render(
+      <NonInjectedAiAgentView
+        abortAiAgentMessage={abortAiAgentMessage}
+        aiAgentTabStore={store}
+        hostedCluster={{ id: "cluster-1", name: { get: () => "cluster-1" } }}
+        sendAiAgentMessage={jest.fn(() => Promise.resolve())}
+        showErrorNotification={jest.fn()}
+        showSuccessNotification={jest.fn()}
+        tabId="tab-new-session"
+        userPreferencesState={{ aiAgent: {} } as any}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /\+ new/i }));
+
+    expect(store.initTab("tab-new-session").messages).toHaveLength(0);
+    expect(screen.getByText("$ no transcript yet")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByPlaceholderText("ask the cluster"));
+    });
   });
 });

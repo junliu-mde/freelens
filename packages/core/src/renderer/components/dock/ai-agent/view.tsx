@@ -113,23 +113,34 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
     status: data.status,
   });
   const [isSessionMenuOpen, setIsSessionMenuOpen] = React.useState(false);
+  const focusComposer = React.useCallback(() => {
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+
+      if (!textarea) {
+        return;
+      }
+
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    });
+  }, []);
 
   latestRunRef.current = {
     activeRunId: data.activeRunId,
     status: data.status,
   };
 
-  React.useEffect(() => {
-    const textarea = textareaRef.current;
+  React.useLayoutEffect(() => {
+    const restoreFocusKey = `${tabId}:${data.sessionId}`;
 
-    if (!textarea || !data.inputDraft || data.messages.length !== 0 || restoredDraftFocusRef.current === tabId) {
+    if (!data.inputDraft || data.messages.length !== 0 || restoredDraftFocusRef.current === restoreFocusKey) {
       return;
     }
 
-    restoredDraftFocusRef.current = tabId;
-    textarea.focus();
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-  }, [data.inputDraft, data.messages.length, tabId]);
+    restoredDraftFocusRef.current = restoreFocusKey;
+    focusComposer();
+  }, [data.sessionId, focusComposer, tabId]);
 
   React.useEffect(
     () => () => {
@@ -187,11 +198,10 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
     aiAgentTabStore.autoSaveSession(tabId);
   };
 
-  const focusComposer = () => {
-    window.requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(textareaRef.current.value.length, textareaRef.current.value.length);
-    });
+  const startNewSession = () => {
+    aiAgentTabStore.newSession(tabId);
+    setIsSessionMenuOpen(false);
+    focusComposer();
   };
 
   const setDraft = (value: string) => {
@@ -240,10 +250,7 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
       }}
     >
       <AiAgentHeader
-        onNewSession={() => {
-          aiAgentTabStore.newSession(tabId);
-          setIsSessionMenuOpen(false);
-        }}
+        onNewSession={startNewSession}
         onOpenSessions={() => setIsSessionMenuOpen(true)}
         sessionCount={sessions.length}
         sessionTitle={sessionTitle}
@@ -252,10 +259,7 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
       <AiAgentSessionMenu
         onClose={() => setIsSessionMenuOpen(false)}
         onDelete={(sessionId) => aiAgentTabStore.deleteSession(tabId, sessionId)}
-        onNewSession={() => {
-          aiAgentTabStore.newSession(tabId);
-          setIsSessionMenuOpen(false);
-        }}
+        onNewSession={startNewSession}
         onRename={(sessionId, title) => aiAgentTabStore.renameSession(sessionId, title)}
         onSearch={(value) => aiAgentTabStore.setSessionSearch(tabId, value)}
         onSwitch={(sessionId) => {
