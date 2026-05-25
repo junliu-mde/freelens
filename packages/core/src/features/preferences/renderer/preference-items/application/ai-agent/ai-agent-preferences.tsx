@@ -157,6 +157,38 @@ const NonInjectedAiAgentPreferences = observer(({ listAiAgentModels, state }: De
         validators={InputValidators.isNumber}
         onChange={(value) => updateSettings({ maxToolIterations: Number(value) || settings.maxToolIterations })}
       />
+
+      <Switch
+        checked={settings.enableCompaction}
+        onChange={() => updateSettings({ enableCompaction: !settings.enableCompaction })}
+      >
+        Automatically compact long chat history
+      </Switch>
+      <div className="hint">
+        When the context gets too large, older turns are summarized and recent turns stay verbatim.
+      </div>
+
+      <label>Compaction reserve tokens</label>
+      <Input
+        theme="round-black"
+        value={String(settings.compactionReserveTokens)}
+        validators={InputValidators.isNumber}
+        onChange={(value) =>
+          updateSettings({ compactionReserveTokens: Number(value) || settings.compactionReserveTokens })
+        }
+        disabled={!settings.enableCompaction}
+      />
+
+      <label>Recent tokens to keep</label>
+      <Input
+        theme="round-black"
+        value={String(settings.compactionKeepRecentTokens)}
+        validators={InputValidators.isNumber}
+        onChange={(value) =>
+          updateSettings({ compactionKeepRecentTokens: Number(value) || settings.compactionKeepRecentTokens })
+        }
+        disabled={!settings.enableCompaction}
+      />
     </section>
   );
 });

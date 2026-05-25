@@ -3,6 +3,7 @@
  * Licensed under MIT License. See LICENSE in root directory for more information.
  */
 
+import { getAiAgentContextWindow } from "../common/model-context-window";
 import { normalizeAiAgentSettings } from "../common/settings";
 import { toAiAgentLlmMessages } from "../common/transcript";
 import { kubectlAiAgentTools, kubectlAiAgentWriteTools } from "./kubectl-tools";
@@ -34,7 +35,7 @@ export const createAiAgentChatModel = (settings: AiAgentSettings): Model<"openai
     cacheRead: 0,
     cacheWrite: 0,
   },
-  contextWindow: 128000,
+  contextWindow: getAiAgentContextWindow(settings.model),
   maxTokens: settings.maxTokens,
   compat: {
     supportsUsageInStreaming: false,

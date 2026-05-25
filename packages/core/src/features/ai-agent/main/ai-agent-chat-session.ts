@@ -4,14 +4,21 @@
  */
 
 import { stream, validateToolCall } from "@earendil-works/pi-ai";
+import { toAiAgentLlmMessages } from "../common/transcript";
+import { compactAiAgentConversation } from "./ai-agent-chat-compaction";
 import { createAiAgentChatContext } from "./ai-agent-chat-context";
 
-import type { AssistantMessage, Context, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context, ToolCall, UserMessage } from "@earendil-works/pi-ai";
 
 import type { ClusterId } from "../../../common/cluster-types";
 import type { AiAgentSendRequest, AiAgentStreamEvent } from "../common/channels";
 import type { AiAgentSettings } from "../common/settings";
+import type { AiAgentToolResultDetails } from "../common/tool-result-details";
+import type { AiAgentConversationMessage, AiAgentMessagePart } from "../common/transcript";
 import type { ExecuteAiAgentKubectlTool } from "./execute-ai-agent-kubectl-tool.injectable";
+
+const continueAfterToolResultsPrompt =
+  "Continue after the tool results. Summarize the evidence and answer the user's debugging request.";
 
 const getTextFromAssistantMessage = (message: AssistantMessage) =>
   message.content
@@ -19,14 +26,57 @@ const getTextFromAssistantMessage = (message: AssistantMessage) =>
     .map((block) => block.text)
     .join("");
 
-const toToolResultMessage = (toolCall: ToolCall, content: string, isError: boolean): ToolResultMessage => ({
-  role: "toolResult",
-  toolCallId: toolCall.id,
-  toolName: toolCall.name,
-  content: [{ type: "text", text: content }],
-  isError,
+const cloneConversationMessage = (message: AiAgentConversationMessage): AiAgentConversationMessage => ({
+  ...message,
+  parts: message.parts.map((part) => ({ ...part })),
+});
+
+const toPendingUserMessage = (content: string): UserMessage => ({
+  role: "user",
+  content,
   timestamp: Date.now(),
 });
+
+const getPendingUserMessageText = (message: UserMessage | undefined) => {
+  if (!message) {
+    return undefined;
+  }
+
+  if (typeof message.content === "string") {
+    return message.content;
+  }
+
+  return message.content
+    .filter((part): part is Extract<(typeof message.content)[number], { type: "text" }> => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+};
+
+const toAssistantHistoryParts = (message: AssistantMessage): AiAgentMessagePart[] => {
+  const parts: AiAgentMessagePart[] = [];
+
+  for (const part of message.content) {
+    switch (part.type) {
+      case "text":
+        parts.push({ type: "text", text: part.text });
+        break;
+      case "thinking":
+        parts.push({ type: "thinking", text: part.thinking, done: true });
+        break;
+      case "toolCall":
+        parts.push({
+          type: "tool_call",
+          toolCallId: part.id,
+          name: part.name,
+          argumentsText: JSON.stringify(part.arguments, null, 2),
+          done: true,
+        });
+        break;
+    }
+  }
+
+  return parts;
+};
 
 interface AiAgentChatSessionOptions {
   request: AiAgentSendRequest;
@@ -51,7 +101,11 @@ export class AiAgentChatSession {
   private readonly settings;
   private readonly model;
   private readonly tools;
-  private readonly context: Context;
+  private readonly systemPrompt;
+  private readonly historyMetadata;
+  private history: AiAgentConversationMessage[];
+  private currentAssistantMessageIndex: number | undefined;
+  private pendingContinuationPrompt: UserMessage | undefined;
 
   constructor({ request, rawSettings, clusterId, executeKubectlTool, emit, signal }: AiAgentChatSessionOptions) {
     const { context, model, settings, tools } = createAiAgentChatContext(request, rawSettings, clusterId);
@@ -64,7 +118,13 @@ export class AiAgentChatSession {
     this.settings = settings;
     this.model = model;
     this.tools = tools;
-    this.context = context;
+    this.systemPrompt = context.systemPrompt;
+    this.historyMetadata = {
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+    };
+    this.history = request.messages.map(cloneConversationMessage);
   }
 
   async run(): Promise<void> {
@@ -79,7 +139,15 @@ export class AiAgentChatSession {
         return;
       }
 
+      const wasAbortedDuringCompaction = await this.maybeCompactHistory();
+
+      if (wasAbortedDuringCompaction) {
+        return;
+      }
+
       const { didEmitError, finalMessage } = await this.streamAssistantMessage();
+
+      this.pendingContinuationPrompt = undefined;
 
       if (this.signal.aborted || didEmitError) {
         return;
@@ -91,7 +159,7 @@ export class AiAgentChatSession {
         return;
       }
 
-      this.context.messages.push(finalMessage);
+      this.appendAssistantMessageToHistory(finalMessage);
 
       const toolCalls = finalMessage.content.filter((block): block is ToolCall => block.type === "toolCall");
 
@@ -120,21 +188,139 @@ export class AiAgentChatSession {
       }
 
       if (getTextFromAssistantMessage(finalMessage).trim()) {
-        this.context.messages.push({
-          role: "user",
-          content: "Continue after the tool results. Summarize the evidence and answer the user's debugging request.",
-          timestamp: Date.now(),
-        });
+        this.pendingContinuationPrompt = toPendingUserMessage(continueAfterToolResultsPrompt);
       }
     }
 
     this.emitRunDone();
   }
 
+  private buildContext(): Context {
+    const messages = toAiAgentLlmMessages(this.history, this.historyMetadata);
+
+    if (this.pendingContinuationPrompt) {
+      messages.push(this.pendingContinuationPrompt);
+    }
+
+    return {
+      systemPrompt: this.systemPrompt,
+      messages,
+      tools: this.tools,
+    };
+  }
+
+  private async maybeCompactHistory() {
+    try {
+      const hadActiveAssistant = this.currentAssistantMessageIndex !== undefined;
+      const compactionResult = await compactAiAgentConversation({
+        messages: this.history,
+        settings: this.settings,
+        model: this.model,
+        apiKey: this.settings.apiKey,
+        signal: this.signal,
+        systemPrompt: this.systemPrompt,
+        tools: this.tools,
+        extraText: getPendingUserMessageText(this.pendingContinuationPrompt),
+      });
+
+      if (this.signal.aborted || !compactionResult) {
+        return this.signal.aborted;
+      }
+
+      this.history = compactionResult.messages.map(cloneConversationMessage);
+      this.currentAssistantMessageIndex =
+        hadActiveAssistant && this.history[this.history.length - 1]?.role === "assistant"
+          ? this.history.length - 1
+          : undefined;
+
+      this.emit({
+        type: "history-compacted",
+        tabId: this.request.tabId,
+        runId: this.request.runId,
+        messages: this.getHistoryForRenderer(),
+      });
+
+      return false;
+    } catch (error) {
+      if (this.signal.aborted) {
+        return true;
+      }
+
+      throw error;
+    }
+  }
+
+  private getHistoryForRenderer() {
+    return this.history
+      .filter((_message, index) => index !== this.currentAssistantMessageIndex)
+      .map(cloneConversationMessage);
+  }
+
+  private appendAssistantMessageToHistory(message: AssistantMessage) {
+    const parts = toAssistantHistoryParts(message);
+
+    if (parts.length === 0) {
+      return;
+    }
+
+    if (this.currentAssistantMessageIndex === undefined) {
+      this.history.push({
+        role: "assistant",
+        createdAt: message.timestamp,
+        parts,
+      });
+      this.currentAssistantMessageIndex = this.history.length - 1;
+
+      return;
+    }
+
+    const currentAssistantMessage = this.history[this.currentAssistantMessageIndex];
+
+    if (!currentAssistantMessage || currentAssistantMessage.role !== "assistant") {
+      return;
+    }
+
+    this.history[this.currentAssistantMessageIndex] = {
+      ...currentAssistantMessage,
+      parts: [...currentAssistantMessage.parts, ...parts],
+    };
+  }
+
+  private appendToolResultToHistory(
+    toolCall: ToolCall,
+    content: string,
+    isError: boolean,
+    details?: AiAgentToolResultDetails,
+  ) {
+    if (this.currentAssistantMessageIndex === undefined) {
+      return;
+    }
+
+    const currentAssistantMessage = this.history[this.currentAssistantMessageIndex];
+
+    if (!currentAssistantMessage || currentAssistantMessage.role !== "assistant") {
+      return;
+    }
+
+    this.history[this.currentAssistantMessageIndex] = {
+      ...currentAssistantMessage,
+      parts: [
+        ...currentAssistantMessage.parts,
+        {
+          type: "tool_result",
+          toolCallId: toolCall.id,
+          content,
+          isError,
+          details,
+        },
+      ],
+    };
+  }
+
   private async streamAssistantMessage(): Promise<StreamAssistantMessageResult> {
     let finalMessage: AssistantMessage | undefined;
 
-    for await (const event of stream(this.model, this.context, {
+    for await (const event of stream(this.model, this.buildContext(), {
       apiKey: this.settings.apiKey,
       signal: this.signal,
       maxTokens: this.settings.maxTokens,
@@ -206,6 +392,7 @@ export class AiAgentChatSession {
     for (const toolCall of toolCalls) {
       let resultContent: string;
       let isError = false;
+      let details;
 
       try {
         validateToolCall(this.tools ?? [], toolCall);
@@ -213,12 +400,13 @@ export class AiAgentChatSession {
 
         resultContent = result.content;
         isError = result.isError;
+        details = result.details;
       } catch (error) {
         resultContent = error instanceof Error ? error.message : String(error);
         isError = true;
       }
 
-      this.context.messages.push(toToolResultMessage(toolCall, resultContent, isError));
+      this.appendToolResultToHistory(toolCall, resultContent, isError, details);
       this.emit({
         type: "tool-result",
         tabId: this.request.tabId,
@@ -226,6 +414,7 @@ export class AiAgentChatSession {
         toolCallId: toolCall.id,
         content: resultContent,
         isError,
+        details,
       });
 
       if (this.signal.aborted) {
@@ -238,7 +427,7 @@ export class AiAgentChatSession {
 
   private async appendToolResultErrors(toolCalls: ToolCall[], text: string) {
     for (const toolCall of toolCalls) {
-      this.context.messages.push(toToolResultMessage(toolCall, text, true));
+      this.appendToolResultToHistory(toolCall, text, true);
       this.emit({
         type: "tool-result",
         tabId: this.request.tabId,
@@ -246,6 +435,7 @@ export class AiAgentChatSession {
         toolCallId: toolCall.id,
         content: text,
         isError: true,
+        details: undefined,
       });
     }
   }
