@@ -86,11 +86,8 @@ function bytesToUnitsAligned(bytes: number): string {
 class NonInjectedNodesRoute extends React.Component<Dependencies> {
   @observable metrics: NodeMetricData | null = null;
 
-  private metricsWatcher = interval(30, () => {
-    void (async () => {
-      await this.props.nodeStore.loadKubeMetrics();
-      this.metrics = await this.props.requestAllNodeMetrics();
-    })();
+  private readonly metricsWatcher = interval(30, () => {
+    void this.refreshMetrics();
   });
 
   constructor(props: Dependencies) {
@@ -105,6 +102,19 @@ class NonInjectedNodesRoute extends React.Component<Dependencies> {
   componentWillUnmount() {
     this.metricsWatcher.stop();
   }
+
+  private refreshMetrics = async () => {
+    const [metricsResult] = await Promise.allSettled([
+      this.props.requestAllNodeMetrics(),
+      this.props.nodeStore.loadKubeMetrics(),
+      this.props.nodeStore.loadAll({}),
+      this.props.podStore.loadAll({}),
+    ]);
+
+    if (metricsResult.status === "fulfilled") {
+      this.metrics = metricsResult.value;
+    }
+  };
 
   getLastMetricValues(node: Node, metricNames: (keyof NodeMetricData)[]): number[] {
     if (!this.metrics) {
