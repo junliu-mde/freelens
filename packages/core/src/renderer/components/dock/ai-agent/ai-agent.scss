@@ -149,7 +149,7 @@
 
   .AiAgentHeader {
     position: relative;
-    z-index: 2;
+    z-index: 3;
     padding: 18px 24px 10px;
     border-bottom: 1px solid var(--ai-border);
     background:
@@ -168,6 +168,7 @@
     align-items: baseline;
     justify-content: space-between;
     gap: 16px;
+    min-width: 0;
   }
 
   .composer-statusline {
@@ -179,6 +180,9 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    flex: 0 0 auto;
+    position: relative;
+    z-index: 1;
   }
 
   .header-actions-sep {
@@ -219,6 +223,7 @@
     display: flex;
     align-items: baseline;
     gap: 12px;
+    flex: 1 1 auto;
     min-width: 0;
   }
 
@@ -243,6 +248,7 @@
   }
 
   .header-title {
+    flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     color: var(--ai-text);
@@ -688,7 +694,7 @@
   .conversation-floating-note {
     position: absolute;
     right: 24px;
-    z-index: 2;
+    z-index: 1;
   }
 
   .conversation-jump-button {
@@ -1093,7 +1099,7 @@
 
   .AiAgentComposer {
     position: relative;
-    z-index: 2;
+    z-index: 3;
     padding: 12px 24px 16px;
     border-top: 1px solid var(--ai-border);
     background:

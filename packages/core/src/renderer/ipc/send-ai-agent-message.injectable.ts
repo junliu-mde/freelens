@@ -5,6 +5,7 @@
  */
 
 import { getInjectable } from "@ogre-tools/injectable";
+import { toJS } from "../../common/utils";
 import { aiAgentSendChannel } from "../../features/ai-agent/common/channels";
 import { aiAgentClusterIdHeader } from "../../features/ai-agent/common/headers";
 import hostedClusterIdInjectable from "../cluster-frame-context/hosted-cluster-id.injectable";
@@ -22,12 +23,15 @@ const sendAiAgentMessageInjectable = getInjectable({
     const hostedClusterId = di.inject(hostedClusterIdInjectable);
 
     return async (request) => {
-      await ipcRenderer.invoke(aiAgentSendChannel, {
-        ...request,
-        metadata: {
-          [aiAgentClusterIdHeader]: hostedClusterId,
-        },
-      });
+      await ipcRenderer.invoke(
+        aiAgentSendChannel,
+        toJS({
+          ...request,
+          metadata: {
+            [aiAgentClusterIdHeader]: hostedClusterId,
+          },
+        }),
+      );
     };
   },
 });

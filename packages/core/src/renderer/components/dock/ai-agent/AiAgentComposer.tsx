@@ -45,6 +45,8 @@ export const AiAgentComposer = ({
   const clusterLabel = clusterDisplayName?.trim() || "detached";
   const identityLabel = clusterLabel.includes("@") ? clusterLabel : `agent@${clusterLabel}`;
   const minTextareaHeight = 20;
+  const shouldFocusComposer = (target: EventTarget | null) =>
+    target instanceof HTMLElement && !target.closest("button, textarea");
 
   React.useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -62,12 +64,13 @@ export const AiAgentComposer = ({
       <div className="composer-shell">
         <div
           className={`composer-input-shell ${permissionMode}`}
-          onClick={(event) => {
-            const target = event.target as HTMLElement;
-
-            if (!target.closest("button")) {
-              onRequestFocus();
+          onMouseDown={(event) => {
+            if (!shouldFocusComposer(event.target)) {
+              return;
             }
+
+            event.preventDefault();
+            onRequestFocus();
           }}
         >
           <div className="composer-input-row">
