@@ -5,64 +5,23 @@
  */
 
 import { observable, reaction } from "mobx";
-
+import {
+  type AiAgentConversationMessage,
+  type AiAgentMessage,
+  type AiAgentMessagePart,
+  type AiAgentRunStatus,
+  deriveAiAgentSessionTitle,
+  finalizeAiAgentMessagesForSave,
+  toAiAgentConversationHistory,
+} from "../../../../features/ai-agent/common/transcript";
 import { DockTabStore } from "../dock-tab-store/dock-tab.store";
 
 import type { AiAgentPermissionMode } from "../../../../features/ai-agent/common/channels";
-import type { DockTabStoreDependencies } from "../dock-tab-store/dock-tab.store";
 import type { StorageLayer } from "../../../utils/storage-helper";
 import type { TabId } from "../dock/store";
+import type { DockTabStoreDependencies } from "../dock-tab-store/dock-tab.store";
 
-export type AiAgentMessageRole = "user" | "assistant";
-
-export type AiAgentRunStatus = "idle" | "streaming" | "done" | "error" | "aborted";
-
-export interface AiAgentTextPart {
-  type: "text";
-  text: string;
-}
-
-export interface AiAgentThinkingPart {
-  type: "thinking";
-  text: string;
-  done: boolean;
-}
-
-export interface AiAgentToolCallPart {
-  type: "tool_call";
-  toolCallId: string;
-  name: string;
-  argumentsText: string;
-  done: boolean;
-}
-
-export interface AiAgentToolResultPart {
-  type: "tool_result";
-  toolCallId: string;
-  content: string;
-  isError: boolean;
-}
-
-export interface AiAgentErrorPart {
-  type: "error";
-  message: string;
-}
-
-export type AiAgentMessagePart =
-  | AiAgentTextPart
-  | AiAgentThinkingPart
-  | AiAgentToolCallPart
-  | AiAgentToolResultPart
-  | AiAgentErrorPart;
-
-export interface AiAgentMessage {
-  id: string;
-  role: AiAgentMessageRole;
-  createdAt: number;
-  runId?: string;
-  status: AiAgentRunStatus;
-  parts: AiAgentMessagePart[];
-}
+export type { AiAgentMessage, AiAgentMessagePart, AiAgentRunStatus };
 
 export interface AiAgentTabData {
   inputDraft: string;
@@ -126,10 +85,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
       ...data,
       status: data.status === "streaming" ? "idle" : data.status,
       activeRunId: undefined,
-      messages: data.messages.map((message) => ({
-        ...message,
-        status: message.status === "streaming" ? "done" : message.status,
-      })),
+      messages: finalizeAiAgentMessagesForSave(data.messages),
     };
   }
 
@@ -438,5 +394,88 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
         };
       }),
     });
+  }
+
+  // ── Session management ──────────────────────────────────────────────
+
+  private sessionsToJSON(): Record<string, AiAgentSession> {
+    return Object.fromEntries(this.sessions);
+  }
+
+  private saveSession(
+    tabId: TabId,
+    sessionId: string,
+    messages: AiAgentMessage[],
+    clusterId?: string,
+    permissionMode?: AiAgentPermissionMode,
+  ): void {
+    if (!messages.length) return;
+
+    const existing = this.sessions.get(sessionId);
+    const title = this.deriveSessionTitle(messages);
+    const now = Date.now();
+
+    this.sessions.set(sessionId, {
+      id: sessionId,
+      title,
+      messages: finalizeAiAgentMessagesForSave(messages),
+      clusterId,
+      permissionMode: permissionMode ?? existing?.permissionMode,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    });
+  }
+
+  private deriveSessionTitle(messages: AiAgentMessage[]): string {
+    return deriveAiAgentSessionTitle(messages);
+  }
+
+  /** Auto-save current session when messages change */
+  autoSaveSession(tabId: TabId): void {
+    const data = this.getData(tabId);
+
+    if (data && data.messages.length > 0) {
+      this.saveSession(tabId, data.sessionId, data.messages, data.clusterId, data.permissionMode);
+    }
+  }
+
+  getConversationMessages(tabId: TabId): AiAgentConversationMessage[] {
+    return toAiAgentConversationHistory(this.initTab(tabId).messages);
+  }
+
+  getSessionsForCluster(clusterId?: string): AiAgentSession[] {
+    const sessions = Array.from(this.sessions.values());
+
+    if (!clusterId) return sessions.sort((a, b) => b.updatedAt - a.updatedAt);
+
+    return sessions.filter((s) => !s.clusterId || s.clusterId === clusterId).sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  switchToSession(tabId: TabId, sessionId: string): void {
+    const data = this.initTab(tabId);
+    const session = this.sessions.get(sessionId);
+
+    if (!session) return;
+
+    // Save current session first
+    this.saveSession(tabId, data.sessionId, data.messages, data.clusterId);
+
+    // Load the target session
+    this.setData(tabId, {
+      inputDraft: "",
+      messages: session.messages,
+      status: "idle",
+      clusterId: session.clusterId ?? data.clusterId,
+      sessionId: session.id,
+      permissionMode: session.permissionMode ?? "read-only",
+    });
+  }
+
+  newSession(tabId: TabId): void {
+    this.clear(tabId);
+  }
+
+  deleteSession(sessionId: string): void {
+    this.sessions.delete(sessionId);
   }
 }

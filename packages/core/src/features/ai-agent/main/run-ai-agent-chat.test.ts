@@ -1,0 +1,251 @@
+/**
+ * Copyright (c) Freelens Authors. All rights reserved.
+ * Licensed under MIT License. See LICENSE in root directory for more information.
+ */
+
+const Type = {
+  Object: jest.fn((value) => value),
+  String: jest.fn((value) => value),
+  Optional: jest.fn((value) => value),
+  Union: jest.fn((value) => value),
+  Literal: jest.fn((value) => value),
+  Boolean: jest.fn((value) => value),
+  Number: jest.fn((value) => value),
+};
+
+jest.mock(
+  "@earendil-works/pi-ai",
+  () => ({
+    stream: jest.fn(),
+    validateToolCall: jest.fn(),
+    Type,
+  }),
+  { virtual: true },
+);
+
+import { stream, validateToolCall } from "@earendil-works/pi-ai";
+import { runAiAgentChat } from "./run-ai-agent-chat";
+
+import type { AiAgentSendRequest, AiAgentStreamEvent } from "../common/channels";
+import type { AiAgentSettings } from "../common/settings";
+import type { ExecuteAiAgentKubectlTool } from "./execute-ai-agent-kubectl-tool.injectable";
+
+describe("run-ai-agent-chat", () => {
+  const toolCall = {
+    type: "toolCall",
+    id: "call-1",
+    name: "kubectl_apply",
+    arguments: {
+      manifest: "apiVersion: v1\nkind: Pod\nmetadata:\n  name: some-pod\n",
+      dryRun: true,
+      namespace: "default",
+    },
+  } as const;
+
+  const request: AiAgentSendRequest = {
+    tabId: "tab-1",
+    runId: "run-1",
+    permissionMode: "read-write",
+    messages: [
+      {
+        role: "user",
+        createdAt: 1,
+        parts: [
+          {
+            type: "text",
+            text: "Apply this manifest with dry-run first.",
+          },
+        ],
+      },
+    ],
+  };
+
+  const settings: AiAgentSettings = {
+    provider: "custom-openai-compat",
+    baseUrl: "http://localhost:8000/v1",
+    apiKey: "irrelevant",
+    model: "some-model",
+    reasoningEffort: "off",
+    maxTokens: 512,
+    enableKubectlTools: true,
+    maxToolIterations: 1,
+  };
+
+  let streamMock: jest.MockedFunction<typeof stream>;
+  let validateToolCallMock: jest.MockedFunction<typeof validateToolCall>;
+
+  beforeEach(() => {
+    streamMock = stream as jest.MockedFunction<typeof stream>;
+    validateToolCallMock = validateToolCall as jest.MockedFunction<typeof validateToolCall>;
+
+    streamMock.mockReset();
+    validateToolCallMock.mockReset();
+    validateToolCallMock.mockImplementation(() => undefined);
+  });
+
+  it("hydrates structured transcript history before streaming", async () => {
+    const executeKubectlTool = jest.fn((async () => ({
+      content: "unused",
+      isError: false,
+    })) as ExecuteAiAgentKubectlTool);
+    const requestWithHistory: AiAgentSendRequest = {
+      ...request,
+      messages: [
+        {
+          role: "user",
+          createdAt: 1,
+          parts: [{ type: "text", text: "Inspect pod-a" }],
+        },
+        {
+          role: "assistant",
+          createdAt: 2,
+          parts: [
+            {
+              type: "tool_call",
+              toolCallId: "call-0",
+              name: "kubectl_get",
+              argumentsText: JSON.stringify({ resource: "pods", namespace: "default" }, null, 2),
+              done: true,
+            },
+            {
+              type: "tool_result",
+              toolCallId: "call-0",
+              content: "$ kubectl get pods\npod-a",
+              isError: false,
+            },
+            {
+              type: "text",
+              text: "pod-a is running",
+            },
+          ],
+        },
+      ],
+    };
+
+    streamMock.mockReturnValue(
+      (async function* () {
+        yield {
+          type: "done",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "done" }],
+            timestamp: Date.now(),
+          },
+        };
+      })() as never,
+    );
+
+    await runAiAgentChat(
+      requestWithHistory,
+      settings,
+      "cluster-1" as never,
+      executeKubectlTool,
+      () => undefined,
+      new AbortController().signal,
+    );
+
+    expect(streamMock).toHaveBeenCalledTimes(1);
+
+    const [, context] = streamMock.mock.calls[0];
+
+    expect(context.messages.slice(0, 4)).toMatchObject([
+      {
+        role: "user",
+        content: "Inspect pod-a",
+        timestamp: 1,
+      },
+      {
+        role: "assistant",
+        stopReason: "toolUse",
+        timestamp: 2,
+        content: [
+          {
+            type: "toolCall",
+            id: "call-0",
+            name: "kubectl_get",
+            arguments: {
+              resource: "pods",
+              namespace: "default",
+            },
+          },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "call-0",
+        toolName: "kubectl_get",
+        isError: false,
+        timestamp: 2,
+        content: [{ type: "text", text: "$ kubectl get pods\npod-a" }],
+      },
+      {
+        role: "assistant",
+        stopReason: "stop",
+        timestamp: 2,
+        content: [{ type: "text", text: "pod-a is running" }],
+      },
+    ]);
+  });
+
+  it("stops after an aborted tool execution without emitting run-error or run-done", async () => {
+    const controller = new AbortController();
+    const events: AiAgentStreamEvent[] = [];
+    const executeKubectlTool = jest.fn((async (_clusterId, _toolCall, signal) => {
+      expect(signal).toBe(controller.signal);
+
+      controller.abort("AI Agent run was stopped.");
+
+      return {
+        content: "AI Agent run was stopped.",
+        isError: true,
+      };
+    }) as ExecuteAiAgentKubectlTool);
+
+    streamMock.mockReturnValue(
+      (async function* () {
+        yield { type: "toolcall_start", contentIndex: 0 };
+        yield { type: "toolcall_end", toolCall };
+        yield {
+          type: "done",
+          message: {
+            role: "assistant",
+            content: [toolCall],
+            timestamp: Date.now(),
+          },
+        };
+      })() as never,
+    );
+
+    await runAiAgentChat(
+      request,
+      settings,
+      "cluster-1" as never,
+      executeKubectlTool,
+      (event) => events.push(event),
+      controller.signal,
+    );
+
+    expect(validateToolCallMock).toHaveBeenCalled();
+    expect(executeKubectlTool).toHaveBeenCalledWith("cluster-1", toolCall, controller.signal);
+    expect(events).toEqual([
+      { type: "run-start", tabId: "tab-1", runId: "run-1" },
+      { type: "tool-call-start", tabId: "tab-1", runId: "run-1", toolCallId: "0" },
+      {
+        type: "tool-call-end",
+        tabId: "tab-1",
+        runId: "run-1",
+        toolCallId: "call-1",
+        name: "kubectl_apply",
+        argumentsText: JSON.stringify(toolCall.arguments, null, 2),
+      },
+      {
+        type: "tool-result",
+        tabId: "tab-1",
+        runId: "run-1",
+        toolCallId: "call-1",
+        content: "AI Agent run was stopped.",
+        isError: true,
+      },
+    ]);
+  });
+});

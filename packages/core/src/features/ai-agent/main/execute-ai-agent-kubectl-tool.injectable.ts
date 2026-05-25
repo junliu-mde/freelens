@@ -5,16 +5,17 @@
 
 import { getInjectable } from "@ogre-tools/injectable";
 import execFileInjectable from "../../../common/fs/exec-file.injectable";
-import getClusterByIdInjectable from "../../cluster/storage/common/get-by-id.injectable";
 import kubeconfigManagerInjectable from "../../../main/kubeconfig-manager/kubeconfig-manager.injectable";
 import bundledKubectlInjectable from "../../../main/kubectl/bundled-kubectl.injectable";
+import getClusterByIdInjectable from "../../cluster/storage/common/get-by-id.injectable";
 
 import type { ToolCall } from "@earendil-works/pi-ai";
-import type { ClusterId } from "../../../common/cluster-types";
-import type { ExecFile } from "../../../common/fs/exec-file.injectable";
-import type { GetClusterById } from "../../cluster/storage/common/get-by-id.injectable";
-import type { Kubectl } from "../../../main/kubectl/kubectl";
 import type { DiContainerForInjection } from "@ogre-tools/injectable";
+
+import type { ClusterId } from "../../../common/cluster-types";
+import type { ExecFile, ExecFileError } from "../../../common/fs/exec-file.injectable";
+import type { Kubectl } from "../../../main/kubectl/kubectl";
+import type { GetClusterById } from "../../cluster/storage/common/get-by-id.injectable";
 
 export interface AiAgentToolExecutionResult {
   content: string;
@@ -24,9 +25,11 @@ export interface AiAgentToolExecutionResult {
 export type ExecuteAiAgentKubectlTool = (
   clusterId: ClusterId | undefined,
   toolCall: ToolCall,
+  signal?: AbortSignal,
 ) => Promise<AiAgentToolExecutionResult>;
 
 const maxOutputLength = 16_000;
+const kubectlToolTimeoutMs = 30_000;
 const allowedResourcePattern = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*(?:\/[a-z][a-z0-9.-]*)?$/i;
 
 const stringifyArg = (value: unknown): string | undefined =>
@@ -61,6 +64,24 @@ const validateSafeManifest = (manifest: string) => {
       );
     }
   }
+};
+
+const getAbortMessage = (signal?: AbortSignal) => {
+  const reason = signal?.reason;
+
+  return typeof reason === "string" && reason ? reason : "AI Agent run was stopped.";
+};
+
+const getKubectlErrorMessage = (error: ExecFileError, signal?: AbortSignal) => {
+  if (signal?.aborted) {
+    return getAbortMessage(signal);
+  }
+
+  if (error.killed && error.message.includes("timed out")) {
+    return `kubectl command timed out after ${kubectlToolTimeoutMs / 1000}s.`;
+  }
+
+  return (error.stderr || error.message).slice(0, maxOutputLength);
 };
 
 const addNamespaceArgs = (args: string[], namespace?: string, allNamespaces?: boolean) => {
@@ -251,25 +272,23 @@ const runKubectl = async (
   kubectl: Kubectl,
   kubeconfigPath: string,
   args: string[],
+  signal?: AbortSignal,
   stdin?: string,
 ) => {
   const kubectlPath = await kubectl.getPath();
   const commandArgs = ["--kubeconfig", kubeconfigPath, ...args, "--request-timeout=20s"];
-  const execOptions: Record<string, unknown> = { maxBuffer: 1024 * 1024 * 8 };
-
-  if (stdin) {
-    execOptions.input = stdin;
-  }
-
-  const result = await execFile(kubectlPath, commandArgs, execOptions);
+  const result = await execFile(kubectlPath, commandArgs, {
+    maxBuffer: 1024 * 1024 * 8,
+    timeout: kubectlToolTimeoutMs,
+    ...(signal ? { signal } : {}),
+    ...(stdin === undefined ? {} : { input: stdin }),
+  });
 
   if (result.callWasSuccessful) {
     return result.response.slice(0, maxOutputLength) || "Command completed with no output.";
   }
 
-  const stderr = result.error.stderr || result.error.message;
-
-  throw new Error(stderr.slice(0, maxOutputLength));
+  throw new Error(getKubectlErrorMessage(result.error, signal));
 };
 
 const createExecuteAiAgentKubectlTool =
@@ -279,8 +298,12 @@ const createExecuteAiAgentKubectlTool =
     kubectl: Kubectl,
     execFile: ExecFile,
   ): ExecuteAiAgentKubectlTool =>
-  async (clusterId, toolCall) => {
+  async (clusterId, toolCall, signal) => {
     try {
+      if (signal?.aborted) {
+        throw new Error(getAbortMessage(signal));
+      }
+
       if (!clusterId) {
         throw new Error("No active cluster is associated with this AI Agent chat.");
       }
@@ -298,7 +321,7 @@ const createExecuteAiAgentKubectlTool =
       // kubectl_apply reads manifest from stdin
       const isApply = toolCall.name === "kubectl_apply";
       const manifest = isApply ? (stringifyArg(toolCall.arguments.manifest) ?? "") : undefined;
-      const output = await runKubectl(execFile, kubectl, kubeconfigPath, args, manifest);
+      const output = await runKubectl(execFile, kubectl, kubeconfigPath, args, signal, manifest);
 
       return {
         content: `$ kubectl ${args.join(" ")}\n${output}`,

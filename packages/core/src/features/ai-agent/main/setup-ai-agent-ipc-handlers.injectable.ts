@@ -8,16 +8,17 @@ import { onLoadOfApplicationInjectionToken } from "@freelensapp/application";
 import { loggerInjectionToken } from "@freelensapp/logger";
 import { getInjectable } from "@ogre-tools/injectable";
 import { ipcMainHandle, ipcMainOn } from "../../../common/ipc";
+import userPreferencesStateInjectable from "../../user-preferences/common/state.injectable";
 import { aiAgentAbortChannel, aiAgentSendChannel, aiAgentStreamEventChannel } from "../common/channels";
 import { aiAgentClusterIdHeader } from "../common/headers";
-import userPreferencesStateInjectable from "../../user-preferences/common/state.injectable";
 import executeAiAgentKubectlToolInjectable from "./execute-ai-agent-kubectl-tool.injectable";
 import { runAiAgentChat } from "./run-ai-agent-chat";
 
 import type { Logger } from "@freelensapp/logger";
+
 import type { ClusterId } from "../../../common/cluster-types";
-import type { AiAgentSendRequest, AiAgentStreamEvent } from "../common/channels";
 import type { UserPreferencesState } from "../../user-preferences/common/state.injectable";
+import type { AiAgentSendRequest, AiAgentStreamEvent } from "../common/channels";
 import type { ExecuteAiAgentKubectlTool } from "./execute-ai-agent-kubectl-tool.injectable";
 
 const activeRuns = new Map<string, AbortController>();
@@ -73,6 +74,12 @@ const setupAiAgentIpcHandlers = (
         controller.signal,
       );
     } catch (error) {
+      if (controller.signal.aborted) {
+        logger.info(`[AI-AGENT] run aborted: ${runKey}`);
+
+        return { ok: true };
+      }
+
       const message = error instanceof Error ? error.message : String(error);
 
       logger.warn(`[AI-AGENT] stream failed: ${message}`);
@@ -85,7 +92,11 @@ const setupAiAgentIpcHandlers = (
   });
 
   ipcMainOn(aiAgentAbortChannel, (_event, tabId: string, runId: string) => {
-    activeRuns.get(getRunKey(tabId, runId))?.abort();
+    const controller = activeRuns.get(getRunKey(tabId, runId));
+
+    if (controller && !controller.signal.aborted) {
+      controller.abort("AI Agent run was stopped.");
+    }
   });
 };
 
