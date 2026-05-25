@@ -163,11 +163,8 @@ function formatCores(cores: number): string {
 class NonInjectedNodesRoute extends React.Component<Dependencies> {
   @observable metrics: NodeMetricData | null = null;
 
-  private metricsWatcher = interval(30, () => {
-    void (async () => {
-      await this.props.nodeStore.loadKubeMetrics();
-      this.metrics = await this.props.requestAllNodeMetrics();
-    })();
+  private readonly metricsWatcher = interval(30, () => {
+    void this.refreshMetrics();
   });
 
   constructor(props: Dependencies) {
@@ -186,6 +183,19 @@ class NonInjectedNodesRoute extends React.Component<Dependencies> {
   componentWillUnmount() {
     this.metricsWatcher.stop();
   }
+
+  private refreshMetrics = async () => {
+    const [metricsResult] = await Promise.allSettled([
+      this.props.requestAllNodeMetrics(),
+      this.props.nodeStore.loadKubeMetrics(),
+      this.props.nodeStore.loadAll({}),
+      this.props.podStore.loadAll({}),
+    ]);
+
+    if (metricsResult.status === "fulfilled") {
+      this.metrics = metricsResult.value;
+    }
+  };
 
   @computed get podsByNode(): Map<string, Pod[]> {
     const podsByNode = new Map<string, Pod[]>();
@@ -466,7 +476,7 @@ class NonInjectedNodesRoute extends React.Component<Dependencies> {
   }
 
   render() {
-    const { nodeStore, eventStore } = this.props;
+    const { nodeStore, eventStore, podStore } = this.props;
 
     return (
       <TabLayout>
@@ -477,7 +487,7 @@ class NonInjectedNodesRoute extends React.Component<Dependencies> {
           className="Nodes"
           store={nodeStore}
           isReady={nodeStore.isLoaded}
-          dependentStores={[eventStore]}
+          dependentStores={[eventStore, podStore]}
           isSelectable={false}
           sortingCallbacks={{
             [columnId.name]: (node) => node.getName(),
