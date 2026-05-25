@@ -7,6 +7,7 @@
 import "./ai-agent.scss";
 
 import { showErrorNotificationInjectable, showSuccessNotificationInjectable } from "@freelensapp/notifications";
+import { disposer } from "@freelensapp/utilities";
 import { withInjectables } from "@ogre-tools/injectable-react";
 import { clipboard, shell } from "electron";
 import { observer } from "mobx-react";
@@ -16,6 +17,7 @@ import userPreferencesStateInjectable from "../../../../features/user-preference
 import hostedClusterInjectable from "../../../cluster-frame-context/hosted-cluster.injectable";
 import abortAiAgentMessageInjectable from "../../../ipc/abort-ai-agent-message.injectable";
 import sendAiAgentMessageInjectable from "../../../ipc/send-ai-agent-message.injectable";
+import dockStoreInjectable from "../dock/store.injectable";
 import { AiAgentComposer } from "./AiAgentComposer";
 import { AiAgentConversation } from "./AiAgentConversation";
 import { AiAgentHeader } from "./AiAgentHeader";
@@ -33,6 +35,7 @@ import type { ShowNotification } from "@freelensapp/notifications";
 import type { UserPreferencesState } from "../../../../features/user-preferences/common/state.injectable";
 import type { AbortAiAgentMessage } from "../../../ipc/abort-ai-agent-message.injectable";
 import type { SendAiAgentMessage } from "../../../ipc/send-ai-agent-message.injectable";
+import type { DockStore } from "../dock/store";
 import type { AiAgentMessage, AiAgentTabStatus, AiAgentTabStore } from "./store";
 
 export interface AiAgentViewProps {
@@ -42,6 +45,7 @@ export interface AiAgentViewProps {
 interface Dependencies {
   abortAiAgentMessage: AbortAiAgentMessage;
   aiAgentTabStore: AiAgentTabStore;
+  dockStore: DockStore;
   hostedCluster: { id: string; name: { get(): string } } | undefined;
   sendAiAgentMessage: SendAiAgentMessage;
   showErrorNotification: ShowNotification;
@@ -81,6 +85,7 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
   const {
     abortAiAgentMessage,
     aiAgentTabStore,
+    dockStore,
     hostedCluster,
     sendAiAgentMessage,
     showErrorNotification,
@@ -108,23 +113,36 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
   const conversationVersion = buildConversationVersion(data.messages);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const restoredDraftFocusRef = React.useRef<string>();
+  const deferredFocusTimeoutRef = React.useRef<number>();
   const latestRunRef = React.useRef<{ activeRunId?: string; status: AiAgentTabStatus }>({
     activeRunId: data.activeRunId,
     status: data.status,
   });
   const [isSessionMenuOpen, setIsSessionMenuOpen] = React.useState(false);
   const focusComposer = React.useCallback(() => {
-    window.requestAnimationFrame(() => {
+    window.clearTimeout(deferredFocusTimeoutRef.current);
+
+    const focusTextarea = () => {
       const textarea = textareaRef.current;
 
       if (!textarea) {
         return;
       }
 
+      window.focus();
       textarea.focus();
       textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    };
+
+    window.requestAnimationFrame(() => {
+      focusTextarea();
+      deferredFocusTimeoutRef.current = window.setTimeout(focusTextarea, 250);
     });
   }, []);
+  const closeSessionMenu = React.useCallback(() => {
+    setIsSessionMenuOpen(false);
+    focusComposer();
+  }, [focusComposer]);
 
   latestRunRef.current = {
     activeRunId: data.activeRunId,
@@ -133,17 +151,22 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
 
   React.useLayoutEffect(() => {
     const restoreFocusKey = `${tabId}:${data.sessionId}`;
+    const activeElement = document.activeElement;
+    const activeElementInsideAiAgent = activeElement instanceof HTMLElement && activeElement.closest(".AiAgent");
+    const shouldRestoreFocus =
+      !isSessionMenuOpen && (Boolean(data.inputDraft) || data.messages.length === 0 || !activeElementInsideAiAgent);
 
-    if (!data.inputDraft || data.messages.length !== 0 || restoredDraftFocusRef.current === restoreFocusKey) {
+    if (!shouldRestoreFocus || restoredDraftFocusRef.current === restoreFocusKey) {
       return;
     }
 
     restoredDraftFocusRef.current = restoreFocusKey;
     focusComposer();
-  }, [data.sessionId, focusComposer, tabId]);
+  }, [data.inputDraft, data.messages.length, data.sessionId, focusComposer, isSessionMenuOpen, tabId]);
 
   React.useEffect(
     () => () => {
+      window.clearTimeout(deferredFocusTimeoutRef.current);
       const latestRun = latestRunRef.current;
 
       if (latestRun.activeRunId && isActiveRun(latestRun.status)) {
@@ -151,6 +174,21 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
       }
     },
     [abortAiAgentMessage, tabId],
+  );
+
+  React.useEffect(
+    () =>
+      disposer(
+        dockStore.onTabChange(
+          ({ tabId: selectedTabId }) => {
+            if (selectedTabId === tabId) {
+              focusComposer();
+            }
+          },
+          { fireImmediately: true },
+        ),
+      ),
+    [dockStore, focusComposer, tabId],
   );
 
   const togglePermissionMode = () => {
@@ -257,14 +295,14 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
       />
 
       <AiAgentSessionMenu
-        onClose={() => setIsSessionMenuOpen(false)}
+        onClose={closeSessionMenu}
         onDelete={(sessionId) => aiAgentTabStore.deleteSession(tabId, sessionId)}
         onNewSession={startNewSession}
         onRename={(sessionId, title) => aiAgentTabStore.renameSession(sessionId, title)}
         onSearch={(value) => aiAgentTabStore.setSessionSearch(tabId, value)}
         onSwitch={(sessionId) => {
           aiAgentTabStore.switchToSession(tabId, sessionId);
-          setIsSessionMenuOpen(false);
+          closeSessionMenu();
         }}
         open={isSessionMenuOpen}
         search={data.sessionSearch}
@@ -313,6 +351,7 @@ export const AiAgentView = withInjectables<Dependencies, AiAgentViewProps>(NonIn
   getProps: (di, props) => ({
     abortAiAgentMessage: di.inject(abortAiAgentMessageInjectable),
     aiAgentTabStore: di.inject(aiAgentTabStoreInjectable),
+    dockStore: di.inject(dockStoreInjectable),
     hostedCluster: di.inject(hostedClusterInjectable),
     sendAiAgentMessage: di.inject(sendAiAgentMessageInjectable),
     showErrorNotification: di.inject(showErrorNotificationInjectable),

@@ -9,10 +9,12 @@ import { Spinner } from "@freelensapp/spinner";
 import { byOrderNumber, interval } from "@freelensapp/utilities";
 import { computedInjectManyInjectable } from "@ogre-tools/injectable-extension-for-mobx";
 import { withInjectables } from "@ogre-tools/injectable-react";
+import { comparer, reaction } from "mobx";
 import { disposeOnUnmount, observer } from "mobx-react";
 import React from "react";
 import { ClusterMetricsResourceType } from "../../../common/cluster-types";
 import enabledMetricsInjectable from "../../api/catalog/entity/metrics-enabled.injectable";
+import clusterFrameContextForNamespacedResourcesInjectable from "../../cluster-frame-context/for-namespaced-resources.injectable";
 import subscribeStoresInjectable from "../../kube-watch-api/subscribe-stores.injectable";
 import eventStoreInjectable from "../events/store.injectable";
 import { TabLayout } from "../layout/tab-layout";
@@ -28,12 +30,14 @@ import type { IAsyncComputed } from "@ogre-tools/injectable-react";
 import type { IComputedValue } from "mobx";
 
 import type { ClusterMetricData } from "../../../common/k8s-api/endpoints/metrics.api/request-cluster-metrics-by-node-names.injectable";
+import type { ClusterContext } from "../../cluster-frame-context/cluster-frame-context";
 import type { SubscribeStores } from "../../kube-watch-api/kube-watch-api";
 import type { EventStore } from "../events/store";
 import type { NodeStore } from "../nodes/store";
 import type { PodStore } from "../workloads-pods/store";
 
 interface Dependencies {
+  clusterFrameContext: ClusterContext;
   subscribeStores: SubscribeStores;
   podStore: PodStore;
   eventStore: EventStore;
@@ -44,14 +48,27 @@ interface Dependencies {
 }
 
 @observer
-class NonInjectedClusterOverview extends React.Component<Dependencies> {
+export class NonInjectedClusterOverview extends React.Component<Dependencies> {
   private readonly gpuRefreshWatcher = interval(60, () => {
     void this.refreshGpuSources();
   });
+  private unsubscribeGpuPodStore?: () => void;
 
   componentDidMount() {
     disposeOnUnmount(this, [
-      this.props.subscribeStores([this.props.podStore, this.props.eventStore, this.props.nodeStore]),
+      this.props.subscribeStores([this.props.eventStore, this.props.nodeStore]),
+      reaction(
+        () => this.props.clusterFrameContext.allNamespaces.slice(),
+        (namespaces) => {
+          this.unsubscribeGpuPodStore?.();
+          this.unsubscribeGpuPodStore = this.props.subscribeStores([this.props.podStore], { namespaces });
+        },
+        {
+          fireImmediately: true,
+          equals: comparer.structural,
+        },
+      ),
+      () => this.unsubscribeGpuPodStore?.(),
     ]);
     this.gpuRefreshWatcher.start(true);
   }
@@ -61,7 +78,10 @@ class NonInjectedClusterOverview extends React.Component<Dependencies> {
   }
 
   private refreshGpuSources = async () => {
-    await Promise.allSettled([this.props.nodeStore.loadAll({}), this.props.podStore.loadAll({})]);
+    await Promise.allSettled([
+      this.props.nodeStore.loadAll({}),
+      this.props.podStore.loadAll({ namespaces: this.props.clusterFrameContext.allNamespaces }),
+    ]);
   };
 
   renderWithMetrics() {
@@ -97,6 +117,7 @@ class NonInjectedClusterOverview extends React.Component<Dependencies> {
 
 export const ClusterOverview = withInjectables<Dependencies>(NonInjectedClusterOverview, {
   getProps: (di) => ({
+    clusterFrameContext: di.inject(clusterFrameContextForNamespacedResourcesInjectable),
     subscribeStores: di.inject(subscribeStoresInjectable),
     clusterMetricsAreVisible: di.inject(enabledMetricsInjectable, ClusterMetricsResourceType.Cluster),
     podStore: di.inject(podStoreInjectable),
