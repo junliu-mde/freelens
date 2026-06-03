@@ -14,16 +14,12 @@ const Type = {
   Array: jest.fn((value) => value),
 };
 
-jest.mock(
-  "@earendil-works/pi-ai",
-  () => ({
-    completeSimple: jest.fn(),
-    stream: jest.fn(),
-    validateToolCall: jest.fn(),
-    Type,
-  }),
-  { virtual: true },
-);
+jest.mock("@earendil-works/pi-ai", () => ({
+  completeSimple: jest.fn(),
+  stream: jest.fn(),
+  validateToolCall: jest.fn(),
+  Type,
+}));
 
 import { completeSimple, stream, validateToolCall } from "@earendil-works/pi-ai";
 import { runAiAgentChat } from "./run-ai-agent-chat";
@@ -468,5 +464,90 @@ describe("run-ai-agent-chat", () => {
         isError: false,
       }),
     );
+  });
+
+  it("bounds tool results before emitting them and before sending them back to the model", async () => {
+    const events: AiAgentStreamEvent[] = [];
+    const largeOutput = Array.from({ length: 3_500 }, (_, index) => `line-${index}`).join("\n");
+    const executeKubectlTool = jest.fn(async () => ({
+      content: largeOutput,
+      isError: false,
+    }));
+    const toolResultCall = {
+      type: "toolCall" as const,
+      id: "call-large",
+      name: "kubectl_get",
+      arguments: {
+        resource: "pods",
+      },
+    };
+
+    streamMock
+      .mockReturnValueOnce(
+        (async function* () {
+          yield { type: "toolcall_start", contentIndex: 0 };
+          yield {
+            type: "toolcall_end",
+            toolCall: toolResultCall,
+          };
+          yield {
+            type: "done",
+            message: {
+              role: "assistant",
+              content: [toolResultCall],
+              timestamp: 100,
+            },
+          };
+        })() as never,
+      )
+      .mockReturnValueOnce(
+        (async function* () {
+          yield {
+            type: "done",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "done" }],
+              timestamp: 101,
+            },
+          };
+        })() as never,
+      );
+
+    await runAiAgentChat(
+      request,
+      {
+        ...settings,
+        maxToolIterations: 2,
+      },
+      "cluster-1" as never,
+      executeKubectlTool,
+      (event) => events.push(event),
+      new AbortController().signal,
+    );
+
+    const toolResultEvent = events.find(
+      (event): event is Extract<AiAgentStreamEvent, { type: "tool-result" }> => event.type === "tool-result",
+    );
+
+    expect(toolResultEvent?.content).not.toContain("line-0\n");
+    expect(toolResultEvent?.content).toContain("line-500\n");
+    expect(toolResultEvent?.content).toContain("line-3499");
+    expect(toolResultEvent?.details?.truncation).toMatchObject({
+      truncated: true,
+      outputLines: 3_000,
+      totalLines: 3_500,
+    });
+
+    const [, secondContext] = streamMock.mock.calls[1];
+    const toolResultMessage = secondContext.messages.find(
+      (message) => message.role === "toolResult" && message.toolCallId === "call-large",
+    );
+
+    expect(toolResultMessage?.content).toEqual([
+      {
+        type: "text",
+        text: toolResultEvent?.content,
+      },
+    ]);
   });
 });

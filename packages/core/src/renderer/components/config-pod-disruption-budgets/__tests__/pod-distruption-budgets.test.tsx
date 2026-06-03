@@ -80,6 +80,9 @@ describe("<PodDisruptionBudgets />", () => {
           has: () => false,
         }),
       } as any,
+      tableColumnOrder: {
+        get: () => undefined,
+      } as any,
     }));
   });
 

@@ -376,6 +376,30 @@ exports[`disable kube object menu items when cluster is not relevant given exten
           data-testid="menu-actions-for-kube-object-menu-for-some-uid"
           id="menu-actions-for-kube-object-menu-for-some-uid"
         >
+          <li
+            class="MenuItem"
+            tabindex="0"
+          >
+            <i
+              class="Icon material interactive focusable"
+              tabindex="0"
+            >
+              <span
+                class="icon"
+                data-icon-name="smart_toy"
+              >
+                smart_toy
+              </span>
+            </i>
+            <div>
+              Ask AI
+            </div>
+            <span
+              class="title"
+            >
+              Ask AI
+            </span>
+          </li>
           <div
             data-testid="some-test-id"
           >
@@ -929,7 +953,32 @@ exports[`disable kube object menu items when cluster is not relevant given exten
           class="Menu MenuActions flex KubeObjectMenu toolbar gaps right bottom"
           data-testid="menu-actions-for-kube-object-menu-for-some-uid"
           id="menu-actions-for-kube-object-menu-for-some-uid"
-        />
+        >
+          <li
+            class="MenuItem"
+            tabindex="0"
+          >
+            <i
+              class="Icon material interactive focusable"
+              tabindex="0"
+            >
+              <span
+                class="icon"
+                data-icon-name="smart_toy"
+              >
+                smart_toy
+              </span>
+            </i>
+            <div>
+              Ask AI
+            </div>
+            <span
+              class="title"
+            >
+              Ask AI
+            </span>
+          </li>
+        </ul>
       </div>
       <div
         class="footer"
@@ -1477,7 +1526,32 @@ exports[`disable kube object menu items when cluster is not relevant given not y
           class="Menu MenuActions flex KubeObjectMenu toolbar gaps right bottom"
           data-testid="menu-actions-for-kube-object-menu-for-some-uid"
           id="menu-actions-for-kube-object-menu-for-some-uid"
-        />
+        >
+          <li
+            class="MenuItem"
+            tabindex="0"
+          >
+            <i
+              class="Icon material interactive focusable"
+              tabindex="0"
+            >
+              <span
+                class="icon"
+                data-icon-name="smart_toy"
+              >
+                smart_toy
+              </span>
+            </i>
+            <div>
+              Ask AI
+            </div>
+            <span
+              class="title"
+            >
+              Ask AI
+            </span>
+          </li>
+        </ul>
       </div>
       <div
         class="footer"

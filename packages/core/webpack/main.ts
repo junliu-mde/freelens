@@ -44,6 +44,14 @@ const webpackLensMain = (): webpack.Configuration => {
       },
       rules: [
         {
+          test: /@earendil-works[/\\]pi-ai[/\\]dist[/\\]env-api-keys\.js$/,
+          use: [
+            {
+              loader: path.resolve(__dirname, "pi-ai-loader.js"),
+            },
+          ],
+        },
+        {
           test: /\.node$/,
           use: "node-loader",
         },

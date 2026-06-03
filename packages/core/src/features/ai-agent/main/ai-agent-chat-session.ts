@@ -8,6 +8,7 @@ import { normalizeAiAgentSettings } from "../common/settings";
 import { toAiAgentLlmMessages } from "../common/transcript";
 import { compactAiAgentConversation } from "./ai-agent-chat-compaction";
 import { createAiAgentChatModel, createAiAgentSystemPrompt, getAiAgentKubectlTools } from "./ai-agent-chat-context";
+import { createAiAgentToolExecutionPayload } from "./ai-agent-tool-output";
 
 import type { AssistantMessage, Context, ToolCall, UserMessage } from "@earendil-works/pi-ai";
 
@@ -27,6 +28,30 @@ const getTextFromAssistantMessage = (message: AssistantMessage) =>
     .filter((block) => block.type === "text")
     .map((block) => block.text)
     .join("");
+
+const normalizeToolExecutionPayload = (
+  toolCall: ToolCall,
+  content: string,
+  details: AiAgentToolResultDetails | undefined,
+) => {
+  if (details?.truncation?.truncated) {
+    return { content, details };
+  }
+
+  const payload = createAiAgentToolExecutionPayload(details?.command ?? toolCall.name, content);
+
+  if (!payload.details?.truncation?.truncated) {
+    return { content, details };
+  }
+
+  return {
+    content: payload.content,
+    details: {
+      ...details,
+      ...payload.details,
+    },
+  };
+};
 
 const cloneConversationMessage = (message: AiAgentConversationMessage): AiAgentConversationMessage => ({
   ...message,
@@ -527,6 +552,11 @@ export class AiAgentChatSession {
         resultContent = error instanceof Error ? error.message : String(error);
         isError = true;
       }
+
+      const payload = normalizeToolExecutionPayload(toolCall, resultContent, details);
+
+      resultContent = payload.content;
+      details = payload.details;
 
       this.appendToolResultToHistory(toolCall, resultContent, isError, details);
       this.emit({

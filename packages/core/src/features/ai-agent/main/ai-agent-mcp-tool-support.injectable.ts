@@ -13,6 +13,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { getInjectable } from "@ogre-tools/injectable";
 import readJsonFileInjectable from "../../../common/fs/read-json-file.injectable";
 import resolveTildeInjectable from "../../../common/path/resolve-tilde.injectable";
+import { createAiAgentToolExecutionPayload } from "./ai-agent-tool-output";
 import type { Stream } from "node:stream";
 
 import type { Logger } from "@freelensapp/logger";
@@ -495,15 +496,26 @@ class AiAgentMcpToolSupportImpl implements AiAgentMcpToolSupport {
           timeout: mcpRequestTimeoutMs,
         },
       );
+      const payload = createAiAgentToolExecutionPayload(
+        `mcp ${binding.serverName}.${binding.remoteToolName}`,
+        formatMcpToolResult(result),
+      );
 
       return {
-        content: formatMcpToolResult(result),
+        content: payload.content,
         isError: Boolean(result.isError),
+        details: payload.details,
       };
     } catch (error) {
+      const payload = createAiAgentToolExecutionPayload(
+        `mcp ${binding.serverName}.${binding.remoteToolName}`,
+        signal?.aborted ? getAbortMessage(signal) : toErrorMessage(error),
+      );
+
       return {
-        content: signal?.aborted ? getAbortMessage(signal) : toErrorMessage(error),
+        content: payload.content,
         isError: true,
+        details: payload.details,
       };
     }
   }

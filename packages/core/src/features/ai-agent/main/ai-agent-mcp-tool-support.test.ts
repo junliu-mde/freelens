@@ -164,11 +164,82 @@ describe("ai-agent MCP tool support", () => {
     );
     expect(result).toEqual({
       content: "file body",
+      details: {
+        command: "mcp filesystem.read_file",
+      },
       isError: false,
     });
 
     await support?.close();
     expect(close).toHaveBeenCalled();
+  });
+
+  it("truncates large MCP text results before returning them to the chat loop", async () => {
+    const largeOutput = Array.from({ length: 3_500 }, (_, index) => `line-${index}`).join("\n");
+    const callTool = jest.fn(async () => ({
+      content: [
+        {
+          type: "text" as const,
+          text: largeOutput,
+        },
+      ],
+    }));
+    const createClient = () => ({
+      connect: async () => undefined,
+      listTools: async () => ({
+        tools: [
+          {
+            name: "read_file",
+            inputSchema: {
+              type: "object",
+              properties: {},
+            },
+          },
+        ],
+      }),
+      callTool,
+      close: async () => undefined,
+    });
+
+    const support = await createAiAgentMcpToolSupport(settings, "read-write", undefined, {
+      readJsonFile: async () => ({
+        mcpServers: {
+          filesystem: {
+            command: "mcp-server",
+          },
+        },
+      }),
+      resolveTilde: (filePath) => filePath.replace("~", "/Users/tester"),
+      logger: {
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+      },
+      canAccessExecutable: () => false,
+      createClient,
+      createStdioTransport: jest.fn(() => ({
+        stderr: null,
+        close: async () => undefined,
+      })),
+    });
+
+    const result = await support?.execute({
+      type: "toolCall",
+      id: "call-1",
+      name: "mcp__filesystem__read_file",
+      arguments: {},
+    });
+
+    expect(result?.content).not.toContain("line-0\n");
+    expect(result?.content).toContain("line-500\n");
+    expect(result?.content).toContain("line-3499");
+    expect(result?.content).toContain("Full output:");
+    expect(result?.details?.truncation).toMatchObject({
+      truncated: true,
+      outputLines: 3_000,
+      totalLines: 3_500,
+    });
+    expect(result?.details?.fullOutputPath).toBeDefined();
   });
 
   it("resolves bare stdio commands from common executable directories", async () => {

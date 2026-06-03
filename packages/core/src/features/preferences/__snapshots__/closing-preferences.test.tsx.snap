@@ -109,6 +109,18 @@ exports[`preferences - closing-preferences given accessing preferences directly 
                 </div>
                 <div
                   class="Tab flex gaps align-center"
+                  data-preference-tab-link-test="ai-agent"
+                  role="tab"
+                  tabindex="0"
+                >
+                  <div
+                    class="label"
+                  >
+                    AI Agent
+                  </div>
+                </div>
+                <div
+                  class="Tab flex gaps align-center"
                   data-preference-tab-link-test="proxy"
                   role="tab"
                   tabindex="0"
@@ -884,6 +896,18 @@ exports[`preferences - closing-preferences given accessing preferences directly 
                     class="label"
                   >
                     App
+                  </div>
+                </div>
+                <div
+                  class="Tab flex gaps align-center"
+                  data-preference-tab-link-test="ai-agent"
+                  role="tab"
+                  tabindex="0"
+                >
+                  <div
+                    class="label"
+                  >
+                    AI Agent
                   </div>
                 </div>
                 <div
@@ -1699,6 +1723,18 @@ exports[`preferences - closing-preferences given already in a page and then navi
                 </div>
                 <div
                   class="Tab flex gaps align-center"
+                  data-preference-tab-link-test="ai-agent"
+                  role="tab"
+                  tabindex="0"
+                >
+                  <div
+                    class="label"
+                  >
+                    AI Agent
+                  </div>
+                </div>
+                <div
+                  class="Tab flex gaps align-center"
                   data-preference-tab-link-test="proxy"
                   role="tab"
                   tabindex="0"
@@ -2474,6 +2510,18 @@ exports[`preferences - closing-preferences given already in a page and then navi
                     class="label"
                   >
                     App
+                  </div>
+                </div>
+                <div
+                  class="Tab flex gaps align-center"
+                  data-preference-tab-link-test="ai-agent"
+                  role="tab"
+                  tabindex="0"
+                >
+                  <div
+                    class="label"
+                  >
+                    AI Agent
                   </div>
                 </div>
                 <div

@@ -29,6 +29,8 @@ import waitUntilBundledExtensionsAreLoadedInjectable from "./start-main-applicat
 import initializeExtensionsInjectable from "./start-main-application/runnables/initialize-extensions.injectable";
 import setupLensProxyInjectable from "./start-main-application/runnables/setup-lens-proxy.injectable";
 import setupSessionProxyBypassInjectable from "./start-main-application/runnables/setup-session-proxy-bypass.injectable";
+import setupAiAgentModelsIpcInjectable from "../features/ai-agent/main/setup-ai-agent-models-ipc.injectable";
+import setupAiAgentIpcHandlersInjectable from "../features/ai-agent/main/setup-ai-agent-ipc-handlers.injectable";
 
 import type { GlobalOverride } from "@freelensapp/test-utils";
 
@@ -103,6 +105,8 @@ const overrideRunnablesHavingSideEffects = (di: DiContainer) => {
     setupLensProxyInjectable,
     setupSessionProxyBypassInjectable,
     setupSyncingOfWeblinksInjectable,
+    setupAiAgentModelsIpcInjectable,
+    setupAiAgentIpcHandlersInjectable,
   ].forEach((injectable) => {
     di.override(injectable, () => ({
       id: injectable.id,

@@ -110,6 +110,18 @@ exports[`remove helm repository from list of active repositories in preferences 
                   </div>
                   <div
                     class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
                     data-preference-tab-link-test="proxy"
                     role="tab"
                     tabindex="0"
@@ -916,6 +928,18 @@ exports[`remove helm repository from list of active repositories in preferences 
                       class="label"
                     >
                       App
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
                     </div>
                   </div>
                   <div
@@ -1736,6 +1760,18 @@ exports[`remove helm repository from list of active repositories in preferences 
                       class="label"
                     >
                       App
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
                     </div>
                   </div>
                   <div
@@ -2584,6 +2620,18 @@ exports[`remove helm repository from list of active repositories in preferences 
                       class="label"
                     >
                       App
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
                     </div>
                   </div>
                   <div

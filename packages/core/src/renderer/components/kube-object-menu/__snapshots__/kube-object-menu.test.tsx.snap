@@ -9,6 +9,30 @@ exports[`kube-object-menu given kube object renders 1`] = `
         data-testid="menu-actions-for-kube-object-menu-for-some-uid"
         id="menu-actions-for-kube-object-menu-for-some-uid"
       >
+        <li
+          class="MenuItem"
+          tabindex="0"
+        >
+          <i
+            class="Icon material interactive focusable"
+            tabindex="0"
+          >
+            <span
+              class="icon"
+              data-icon-name="smart_toy"
+            >
+              smart_toy
+            </span>
+          </i>
+          <div>
+            Ask AI
+          </div>
+          <span
+            class="title"
+          >
+            Ask AI
+          </span>
+        </li>
         <li>
           Some menu item
         </li>
@@ -52,6 +76,30 @@ exports[`kube-object-menu given kube object when removing kube object renders 1`
         data-testid="menu-actions-for-kube-object-menu-for-some-uid"
         id="menu-actions-for-kube-object-menu-for-some-uid"
       >
+        <li
+          class="MenuItem"
+          tabindex="0"
+        >
+          <i
+            class="Icon material interactive focusable"
+            tabindex="0"
+          >
+            <span
+              class="icon"
+              data-icon-name="smart_toy"
+            >
+              smart_toy
+            </span>
+          </i>
+          <div>
+            Ask AI
+          </div>
+          <span
+            class="title"
+          >
+            Ask AI
+          </span>
+        </li>
         <li>
           Some menu item
         </li>
@@ -150,6 +198,30 @@ exports[`kube-object-menu given kube object when rerendered with different kube 
       >
         <li
           class="MenuItem"
+          tabindex="0"
+        >
+          <i
+            class="Icon material interactive focusable"
+            tabindex="0"
+          >
+            <span
+              class="icon"
+              data-icon-name="smart_toy"
+            >
+              smart_toy
+            </span>
+          </i>
+          <div>
+            Ask AI
+          </div>
+          <span
+            class="title"
+          >
+            Ask AI
+          </span>
+        </li>
+        <li
+          class="MenuItem"
           data-testid="menu-action-delete-for-/some-other-api-version/some-other-kind/some-other-namespace/some-other-name"
           tabindex="0"
         >
@@ -188,6 +260,30 @@ exports[`kube-object-menu given kube object when rerendered with different kube 
         data-testid="menu-actions-for-kube-object-menu-for-some-other-uid"
         id="menu-actions-for-kube-object-menu-for-some-other-uid"
       >
+        <li
+          class="MenuItem"
+          tabindex="0"
+        >
+          <i
+            class="Icon material interactive focusable"
+            tabindex="0"
+          >
+            <span
+              class="icon"
+              data-icon-name="smart_toy"
+            >
+              smart_toy
+            </span>
+          </i>
+          <div>
+            Ask AI
+          </div>
+          <span
+            class="title"
+          >
+            Ask AI
+          </span>
+        </li>
         <li
           class="MenuItem"
           data-testid="menu-action-delete-for-/some-other-api-version/some-other-kind/some-other-namespace/some-other-name"
@@ -281,6 +377,30 @@ exports[`kube-object-menu given kube object with namespace when removing kube ob
         data-testid="menu-actions-for-kube-object-menu-for-some-uid"
         id="menu-actions-for-kube-object-menu-for-some-uid"
       >
+        <li
+          class="MenuItem"
+          tabindex="0"
+        >
+          <i
+            class="Icon material interactive focusable"
+            tabindex="0"
+          >
+            <span
+              class="icon"
+              data-icon-name="smart_toy"
+            >
+              smart_toy
+            </span>
+          </i>
+          <div>
+            Ask AI
+          </div>
+          <span
+            class="title"
+          >
+            Ask AI
+          </span>
+        </li>
         <li>
           Some menu item
         </li>
@@ -377,6 +497,30 @@ exports[`kube-object-menu given kube object without namespace when removing kube
         data-testid="menu-actions-for-kube-object-menu-for-some-uid"
         id="menu-actions-for-kube-object-menu-for-some-uid"
       >
+        <li
+          class="MenuItem"
+          tabindex="0"
+        >
+          <i
+            class="Icon material interactive focusable"
+            tabindex="0"
+          >
+            <span
+              class="icon"
+              data-icon-name="smart_toy"
+            >
+              smart_toy
+            </span>
+          </i>
+          <div>
+            Ask AI
+          </div>
+          <span
+            class="title"
+          >
+            Ask AI
+          </span>
+        </li>
         <li>
           Some menu item
         </li>

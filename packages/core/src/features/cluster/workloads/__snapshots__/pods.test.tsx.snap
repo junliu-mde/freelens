@@ -691,6 +691,29 @@ exports[`workloads / pods when navigating to workloads / pods view given a names
                       />
                     </div>
                     <div
+                      class="TableCell gpu nowrap sorting"
+                      id="gpuRequests"
+                    >
+                      <div
+                        class="content"
+                      >
+                        GPU
+                      </div>
+                      <i
+                        class="Icon sortIcon material focusable"
+                      >
+                        <span
+                          class="icon"
+                          data-icon-name="arrow_drop_down"
+                        >
+                          arrow_drop_down
+                        </span>
+                      </i>
+                      <div
+                        class="resize-handle"
+                      />
+                    </div>
+                    <div
                       class="TableCell memory nowrap sorting"
                       id="memoryUsage"
                     >
@@ -924,6 +947,13 @@ exports[`workloads / pods when navigating to workloads / pods view given a names
                               >
                                 <span>
                                   N/A
+                                </span>
+                              </div>
+                              <div
+                                class="TableCell gpu"
+                              >
+                                <span>
+                                  -
                                 </span>
                               </div>
                               <div
@@ -1857,6 +1887,29 @@ exports[`workloads / pods when navigating to workloads / pods view given no pods
                         class="content"
                       >
                         CPU
+                      </div>
+                      <i
+                        class="Icon sortIcon material focusable"
+                      >
+                        <span
+                          class="icon"
+                          data-icon-name="arrow_drop_down"
+                        >
+                          arrow_drop_down
+                        </span>
+                      </i>
+                      <div
+                        class="resize-handle"
+                      />
+                    </div>
+                    <div
+                      class="TableCell gpu nowrap sorting"
+                      id="gpuRequests"
+                    >
+                      <div
+                        class="content"
+                      >
+                        GPU
                       </div>
                       <i
                         class="Icon sortIcon material focusable"
@@ -2891,6 +2944,29 @@ exports[`workloads / pods when navigating to workloads / pods view given pods ar
                         class="content"
                       >
                         CPU
+                      </div>
+                      <i
+                        class="Icon sortIcon material focusable"
+                      >
+                        <span
+                          class="icon"
+                          data-icon-name="arrow_drop_down"
+                        >
+                          arrow_drop_down
+                        </span>
+                      </i>
+                      <div
+                        class="resize-handle"
+                      />
+                    </div>
+                    <div
+                      class="TableCell gpu nowrap sorting"
+                      id="gpuRequests"
+                    >
+                      <div
+                        class="content"
+                      >
+                        GPU
                       </div>
                       <i
                         class="Icon sortIcon material focusable"

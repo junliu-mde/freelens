@@ -1,3 +1,15 @@
+process.stdout.on("error", (err: any) => {
+  if (err.code === "EPIPE") {
+    // Ignore stdout EPIPE errors to prevent crashes when parent closes pipe
+  }
+});
+
+process.stderr.on("error", (err: any) => {
+  if (err.code === "EPIPE") {
+    // Ignore stderr EPIPE errors
+  }
+});
+
 import { applicationFeature, startApplicationInjectionToken } from "@freelensapp/application";
 import { applicationFeatureForElectronMain } from "@freelensapp/application-for-electron-main";
 import { commonExtensionApi as Common, mainExtensionApi as Main, registerLensCore } from "@freelensapp/core/main";
