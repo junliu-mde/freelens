@@ -7,6 +7,7 @@
 import { loggerInjectionToken } from "@freelensapp/logger";
 import { getInjectable } from "@ogre-tools/injectable";
 import getClusterByIdInjectable from "../../../features/cluster/storage/common/get-by-id.injectable";
+import dockStoreInjectable from "../dock/dock/store.injectable";
 import { ClusterFrameHandler } from "./cluster-frame-handler";
 import emitClusterVisibilityInjectable from "./emit-cluster-visibility.injectable";
 
@@ -17,6 +18,7 @@ const clusterFrameHandlerInjectable = getInjectable({
       emitClusterVisibility: di.inject(emitClusterVisibilityInjectable),
       getClusterById: di.inject(getClusterByIdInjectable),
       logger: di.inject(loggerInjectionToken),
+      dockStore: di.inject(dockStoreInjectable),
     }),
 });
 

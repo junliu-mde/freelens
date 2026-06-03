@@ -362,9 +362,37 @@ const toolDefinitions: Record<AiAgentKubectlToolName, AiAgentKubectlToolDefiniti
   },
 };
 
-export const kubectlAiAgentTools = Object.values(toolDefinitions)
-  .filter((definition) => !definition.isWrite)
-  .map((definition) => definition.tool);
+export const askTool: Tool = {
+  name: "ask",
+  description:
+    "Ask the user one or more clarifying questions when there is ambiguity, choices to be made, or missing parameters, allowing the user to select options or provide custom input.",
+  parameters: Type.Object({
+    questions: Type.Array(
+      Type.Object({
+        id: Type.String({ description: "A unique identifier for the question (e.g. 'namespace', 'pod_name')" }),
+        question: Type.String({ description: "The text of the question to present to the user" }),
+        options: Type.Array(
+          Type.Object({
+            label: Type.String({ description: "Label for the selectable option (e.g., 'kube-system', 'default')" }),
+          }),
+          {
+            description: "Available options for the user to pick from. Leave empty if you only want custom text input.",
+          },
+        ),
+        multi: Type.Optional(Type.Boolean({ description: "Whether the user can select multiple options" })),
+        recommended: Type.Optional(Type.Number({ description: "Index of the recommended option (0-indexed)" })),
+      }),
+      { minItems: 1, description: "A list of one or more questions to ask" },
+    ),
+  }),
+};
+
+export const kubectlAiAgentTools = [
+  ...Object.values(toolDefinitions)
+    .filter((definition) => !definition.isWrite)
+    .map((definition) => definition.tool),
+  askTool,
+];
 
 export const kubectlAiAgentWriteTools = Object.values(toolDefinitions)
   .filter((definition) => definition.isWrite)

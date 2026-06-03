@@ -52,7 +52,7 @@ interface Dependencies {
 }
 
 const NonInjectedPieChart = observer(
-  ({ activeTheme, data, className, options, showChart, ...chartProps }: Dependencies & PieChartProps) => {
+  ({ activeTheme, data, className, options, showChart, children, ...chartProps }: Dependencies & PieChartProps) => {
     const { contentColor } = activeTheme.get().colors;
     const opts: ChartOptions = {
       maintainAspectRatio: false,
@@ -102,7 +102,9 @@ const NonInjectedPieChart = observer(
         options={showChart ? {} : opts}
         showChart={showChart}
         {...chartProps}
-      />
+      >
+        {children}
+      </Chart>
     );
   },
 );

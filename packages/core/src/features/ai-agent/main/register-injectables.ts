@@ -6,6 +6,7 @@
  * This replaces the webpack-based auto-registration system.
  */
 
+import createAiAgentMcpToolSupportInjectable from "./ai-agent-mcp-tool-support.injectable";
 import executeAiAgentKubectlToolInjectable from "./execute-ai-agent-kubectl-tool.injectable";
 import setupAiAgentIpcHandlersInjectable from "./setup-ai-agent-ipc-handlers.injectable";
 import setupAiAgentModelsIpcInjectable from "./setup-ai-agent-models-ipc.injectable";
@@ -13,6 +14,11 @@ import setupAiAgentModelsIpcInjectable from "./setup-ai-agent-models-ipc.injecta
 import type { DiContainerForInjection } from "@ogre-tools/injectable";
 
 export function registerInjectables(di: DiContainerForInjection): void {
+  try {
+    di.register(createAiAgentMcpToolSupportInjectable);
+  } catch (e) {
+    /* Ignore duplicate registration */
+  }
   try {
     di.register(executeAiAgentKubectlToolInjectable);
   } catch (e) {

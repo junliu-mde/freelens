@@ -19,6 +19,8 @@ export interface AiAgentSettings {
   maxTokens: number;
   temperature?: number;
   enableKubectlTools: boolean;
+  enableMcpTools: boolean;
+  mcpConfigPath: string;
   maxToolIterations: number;
   enableCompaction: boolean;
   compactionReserveTokens: number;
@@ -34,6 +36,8 @@ export const defaultAiAgentSettings: AiAgentSettings = {
   maxTokens: 4096,
   temperature: undefined,
   enableKubectlTools: true,
+  enableMcpTools: true,
+  mcpConfigPath: "~/.mcp.json",
   maxToolIterations: 5,
   enableCompaction: true,
   compactionReserveTokens: 16_384,
@@ -43,6 +47,7 @@ export const defaultAiAgentSettings: AiAgentSettings = {
 export const normalizeAiAgentSettings = (settings?: Partial<AiAgentSettings>): AiAgentSettings => ({
   ...defaultAiAgentSettings,
   ...settings,
+  mcpConfigPath: settings?.mcpConfigPath?.trim() ?? defaultAiAgentSettings.mcpConfigPath,
   maxTokens: toPositiveInteger(settings?.maxTokens, defaultAiAgentSettings.maxTokens),
   temperature: settings?.temperature !== undefined ? Number(settings?.temperature) : undefined,
   maxToolIterations: toPositiveInteger(settings?.maxToolIterations, defaultAiAgentSettings.maxToolIterations, 0),

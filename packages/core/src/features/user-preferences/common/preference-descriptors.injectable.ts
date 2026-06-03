@@ -9,8 +9,8 @@ import { merge } from "lodash";
 import { observable } from "mobx";
 import kubeDirectoryPathInjectable from "../../../common/os/kube-directory-path.injectable";
 import { defaultColorThemePreference } from "../../../common/vars";
-import { defaultAiAgentSettings, normalizeAiAgentSettings } from "../../ai-agent/common/settings";
 import currentTimezoneInjectable from "../../../common/vars/current-timezone.injectable";
+import { normalizeAiAgentSettings } from "../../ai-agent/common/settings";
 import {
   ClusterPageMenuOrder,
   defaultEditorConfig,
@@ -49,11 +49,7 @@ const userPreferenceDescriptorsInjectable = getInjectable({
       }),
       aiAgent: getPreferenceDescriptor<Partial<AiAgentSettings>, AiAgentSettings>({
         fromStore: (val) => normalizeAiAgentSettings(val),
-        toStore: (val) => {
-          const normalized = normalizeAiAgentSettings(val);
-
-          return JSON.stringify(normalized) === JSON.stringify(defaultAiAgentSettings) ? undefined : normalized;
-        },
+        toStore: (val) => normalizeAiAgentSettings(val),
       }),
       shell: getPreferenceDescriptor<string | undefined>({
         fromStore: (val) => val,

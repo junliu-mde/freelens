@@ -37,4 +37,9 @@ export enum WindowAction {
    * Request that the current window is closed
    */
   CLOSE = "close",
+
+  /**
+   * Request that the current window and its web contents take keyboard focus
+   */
+  FOCUS_WEB_CONTENTS = "focus-web-contents",
 }

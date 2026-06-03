@@ -16,10 +16,11 @@ import type { KubeObjectMetadata, KubeObjectStatus } from "@freelensapp/kube-obj
 export interface KubeObjectConditionsListProps {
   object: KubeObject;
   conditionTypePriorities?: Record<string, number>;
+  maxConditions?: number;
 }
 
 export const KubeObjectConditionsList = observer((props: KubeObjectConditionsListProps) => {
-  const { object, conditionTypePriorities } = props;
+  const { object, conditionTypePriorities, maxConditions } = props;
 
   if (!object) {
     return null;
@@ -33,30 +34,45 @@ export const KubeObjectConditionsList = observer((props: KubeObjectConditionsLis
 
   if (!conditions?.length) return null;
 
+  const filteredConditions = sortConditions(conditions, conditionTypePriorities)?.filter(
+    (condition) => condition.status === "True" || condition.type === "Ready",
+  );
+
+  const sortedConditions = filteredConditions?.sort((a, b) => {
+    if (conditionTypePriorities) {
+      const pa = conditionTypePriorities[a.type] ?? 0;
+      const pb = conditionTypePriorities[b.type] ?? 0;
+
+      if (pa !== pb) {
+        return pb - pa;
+      }
+    }
+
+    // Always put "Ready" type first
+    if (a.type === "Ready" && b.type !== "Ready") return -1;
+    if (b.type === "Ready" && a.type !== "Ready") return 1;
+
+    return 0;
+  });
+
+  const visibleConditions = maxConditions === undefined ? sortedConditions : sortedConditions?.slice(0, maxConditions);
+
   return (
     <>
-      {sortConditions(conditions, conditionTypePriorities)
-        ?.filter((condition) => condition.status === "True" || condition.type === "Ready")
-        ?.sort((a, b) => {
-          // Always put "Ready" type first
-          if (a.type === "Ready" && b.type !== "Ready") return -1;
-          if (b.type === "Ready" && a.type !== "Ready") return 1;
-          return 0;
-        })
-        ?.map((condition) => {
-          const { type } = condition;
-          const id = `list-${object.getId()}-condition-${type}`;
-          const name = condition.status === "False" || condition.status === "Unknown" ? `Not${type}` : type;
+      {visibleConditions?.map((condition) => {
+        const { type } = condition;
+        const id = `list-${object.getId()}-condition-${type}`;
+        const name = condition.status === "False" || condition.status === "Unknown" ? `Not${type}` : type;
 
-          return (
-            <div key={type} id={id} className={getClassName(condition, "condition")}>
-              {name}
-              <Tooltip targetId={id} formatters={{ tableView: true }}>
-                {getTooltip(condition, id)}
-              </Tooltip>
-            </div>
-          );
-        })}
+        return (
+          <div key={type} id={id} className={getClassName(condition, "condition")}>
+            {name}
+            <Tooltip targetId={id} formatters={{ tableView: true }}>
+              {getTooltip(condition, id)}
+            </Tooltip>
+          </div>
+        );
+      })}
     </>
   );
 });

@@ -5,7 +5,7 @@
  */
 
 import "@testing-library/jest-dom";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { AiAgentTabStore } from "./store";
@@ -29,6 +29,8 @@ const createDockStore = (tabId: string) =>
     },
   }) as any;
 
+const originalSetSelectionRange = HTMLTextAreaElement.prototype.setSelectionRange;
+
 describe("<AiAgentView />", () => {
   let user: UserEvent;
   let store: AiAgentTabStore;
@@ -40,11 +42,20 @@ describe("<AiAgentView />", () => {
     user = userEvent.setup();
     store = new AiAgentTabStore({
       createStorage: createMockStorage(),
+      ipcRenderer: { invoke: jest.fn() } as any,
     });
     abortAiAgentMessage = jest.fn();
     Element.prototype.scrollIntoView = jest.fn();
     setSelectionRangeMock = jest.fn();
-    HTMLTextAreaElement.prototype.setSelectionRange = setSelectionRangeMock;
+    HTMLTextAreaElement.prototype.setSelectionRange = function (
+      start: number,
+      end: number,
+      direction?: "forward" | "backward" | "none",
+    ) {
+      setSelectionRangeMock(start, end, direction);
+
+      return originalSetSelectionRange.call(this, start, end, direction);
+    };
     uuidCount = 0;
     Object.defineProperty(globalThis, "crypto", {
       configurable: true,
@@ -62,6 +73,7 @@ describe("<AiAgentView />", () => {
   });
 
   afterEach(() => {
+    HTMLTextAreaElement.prototype.setSelectionRange = originalSetSelectionRange;
     jest.restoreAllMocks();
   });
 
@@ -154,7 +166,7 @@ describe("<AiAgentView />", () => {
       />,
     );
 
-    expect(setSelectionRangeMock).toHaveBeenCalledWith(4, 4);
+    expect(setSelectionRangeMock).toHaveBeenCalledWith(4, 4, undefined);
     setSelectionRangeMock.mockClear();
 
     act(() => {
@@ -208,6 +220,105 @@ describe("<AiAgentView />", () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(screen.getByPlaceholderText("ask the cluster"));
     });
+  });
+
+  it("keeps the textarea mouse down native so macOS typing can start after a click", () => {
+    render(
+      <NonInjectedAiAgentView
+        abortAiAgentMessage={abortAiAgentMessage}
+        aiAgentTabStore={store}
+        dockStore={createDockStore("tab-native-click")}
+        hostedCluster={{ id: "cluster-1", name: { get: () => "cluster-1" } }}
+        sendAiAgentMessage={jest.fn(() => Promise.resolve())}
+        showErrorNotification={jest.fn()}
+        showSuccessNotification={jest.fn()}
+        tabId="tab-native-click"
+        userPreferencesState={{ aiAgent: {} } as any}
+      />,
+    );
+
+    const textarea = screen.getByPlaceholderText("ask the cluster");
+    const mouseDown = createEvent.mouseDown(textarea);
+
+    fireEvent(textarea, mouseDown);
+
+    expect(mouseDown.defaultPrevented).toBe(false);
+  });
+
+  it("moves DOM focus onto the textarea during mouse down", () => {
+    render(
+      <NonInjectedAiAgentView
+        abortAiAgentMessage={abortAiAgentMessage}
+        aiAgentTabStore={store}
+        dockStore={createDockStore("tab-mousedown-focus")}
+        hostedCluster={{ id: "cluster-1", name: { get: () => "cluster-1" } }}
+        sendAiAgentMessage={jest.fn(() => Promise.resolve())}
+        showErrorNotification={jest.fn()}
+        showSuccessNotification={jest.fn()}
+        tabId="tab-mousedown-focus"
+        userPreferencesState={{ aiAgent: {} } as any}
+      />,
+    );
+
+    const textarea = screen.getByPlaceholderText("ask the cluster");
+
+    document.body.focus();
+    fireEvent.mouseDown(textarea);
+
+    expect(document.activeElement).toBe(textarea);
+  });
+
+  it("routes plain typing from the dock window back into the composer", () => {
+    render(
+      <div className="Dock">
+        <button type="button" data-testid="dock-focus">
+          dock focus
+        </button>
+        <NonInjectedAiAgentView
+          abortAiAgentMessage={abortAiAgentMessage}
+          aiAgentTabStore={store}
+          dockStore={createDockStore("tab-window-keydown")}
+          hostedCluster={{ id: "cluster-1", name: { get: () => "cluster-1" } }}
+          sendAiAgentMessage={jest.fn(() => Promise.resolve())}
+          showErrorNotification={jest.fn()}
+          showSuccessNotification={jest.fn()}
+          tabId="tab-window-keydown"
+          userPreferencesState={{ aiAgent: {} } as any}
+        />
+      </div>,
+    );
+
+    const dockFocus = screen.getByTestId("dock-focus");
+
+    dockFocus.focus();
+    fireEvent.keyDown(dockFocus, { key: "d" });
+
+    expect(document.activeElement).toBe(screen.getByPlaceholderText("ask the cluster"));
+  });
+
+  it("leaves textarea keydown to the native input path", () => {
+    render(
+      <div className="Dock">
+        <NonInjectedAiAgentView
+          abortAiAgentMessage={abortAiAgentMessage}
+          aiAgentTabStore={store}
+          dockStore={createDockStore("tab-textarea-keydown")}
+          hostedCluster={{ id: "cluster-1", name: { get: () => "cluster-1" } }}
+          sendAiAgentMessage={jest.fn(() => Promise.resolve())}
+          showErrorNotification={jest.fn()}
+          showSuccessNotification={jest.fn()}
+          tabId="tab-textarea-keydown"
+          userPreferencesState={{ aiAgent: {} } as any}
+        />
+      </div>,
+    );
+
+    const textarea = screen.getByPlaceholderText("ask the cluster");
+
+    textarea.focus();
+    fireEvent.keyDown(textarea, { key: "d" });
+
+    expect(store.initTab("tab-textarea-keydown").inputDraft).toBe("");
   });
 
   it("returns focus to the composer after closing history", async () => {

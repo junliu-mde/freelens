@@ -150,6 +150,33 @@ const NonInjectedAiAgentPreferences = observer(({ listAiAgentModels, state }: De
         The agent can run read-only kubectl commands against the active cluster via Freelens auth proxy.
       </div>
 
+      <SubTitle title="MCP" />
+
+      <Switch
+        checked={settings.enableMcpTools}
+        onChange={() => updateSettings({ enableMcpTools: !settings.enableMcpTools })}
+      >
+        Enable MCP tools from config file
+      </Switch>
+      <div className="hint">When enabled, Freelens loads MCP servers and makes their tools available in chat.</div>
+
+      <label>MCP config path</label>
+      <Input
+        theme="round-black"
+        value={settings.mcpConfigPath}
+        onChange={(mcpConfigPath) => updateSettings({ mcpConfigPath })}
+        placeholder="~/.mcp.json"
+        disabled={!settings.enableMcpTools}
+      />
+      <div className="hint">
+        Default path: <code>~/.mcp.json</code>
+      </div>
+      <div className="hint">
+        Freelens reads the <code>mcpServers</code> object in that file. Local servers can use <code>command</code>,{" "}
+        <code>args</code>, <code>env</code>, and <code>cwd</code>. Remote servers can use <code>url</code>, and can also
+        set <code>transport</code> or <code>headers</code>.
+      </div>
+
       <label>Max tool iterations</label>
       <Input
         theme="round-black"

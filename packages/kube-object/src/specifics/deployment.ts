@@ -80,9 +80,22 @@ export class Deployment extends KubeObject<NamespaceScopedMetadata, DeploymentSt
   }
 
   getConditionsText(activeOnly = true) {
-    return this.getConditions(activeOnly)
-      .map(({ type }) => type)
-      .join(" ");
+    const conditions = this.getConditions(activeOnly);
+    const available = conditions.find((condition) => condition.type === "Available");
+    const progressing = conditions.find((condition) => condition.type === "Progressing");
+
+    if (available?.status === "True") {
+      return available.type;
+    }
+
+    if (progressing?.status === "True") {
+      return progressing.type;
+    }
+
+    const primary =
+      available ?? progressing ?? conditions.find((condition) => condition.status === "True") ?? conditions[0];
+
+    return primary?.type ?? "";
   }
 
   getReplicas() {

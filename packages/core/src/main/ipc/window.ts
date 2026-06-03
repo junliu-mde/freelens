@@ -8,8 +8,10 @@ import { BrowserWindow, webContents } from "electron";
 import { broadcastMessage } from "../../common/ipc";
 import { WindowAction } from "../../common/ipc/window";
 
-export function handleWindowAction(action: WindowAction) {
-  const window = BrowserWindow.getFocusedWindow();
+import type { IpcMainInvokeEvent } from "electron";
+
+export function handleWindowAction(action: WindowAction, event?: IpcMainInvokeEvent) {
+  const window = event ? BrowserWindow.fromWebContents(event.sender) : BrowserWindow.getFocusedWindow();
 
   if (!window) return;
 
@@ -40,6 +42,12 @@ export function handleWindowAction(action: WindowAction) {
 
     case WindowAction.CLOSE: {
       window.close();
+      break;
+    }
+
+    case WindowAction.FOCUS_WEB_CONTENTS: {
+      window.focus();
+      window.webContents.focus();
       break;
     }
 

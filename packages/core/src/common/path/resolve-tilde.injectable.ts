@@ -21,7 +21,7 @@ const resolveTildeInjectable = getInjectable({
         return homeDirectoryPath;
       }
 
-      if (filePath === `~${fileSystemSeparator}`) {
+      if (filePath.startsWith(`~${fileSystemSeparator}`)) {
         return `${homeDirectoryPath}${filePath.slice(1)}`;
       }
 

@@ -5,6 +5,7 @@
  */
 
 import { getInjectable } from "@ogre-tools/injectable";
+import ipcRendererInjectable from "../../../utils/channel/ipc-renderer.injectable";
 import createStorageInjectable from "../../../utils/create-storage/create-storage.injectable";
 import { AiAgentTabStore } from "./store";
 
@@ -14,6 +15,7 @@ const aiAgentTabStoreInjectable = getInjectable({
   instantiate: (di) =>
     new AiAgentTabStore({
       createStorage: di.inject(createStorageInjectable),
+      ipcRenderer: di.inject(ipcRendererInjectable),
     }),
 });
 

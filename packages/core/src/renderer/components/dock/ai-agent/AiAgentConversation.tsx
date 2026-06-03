@@ -16,6 +16,7 @@ interface AiAgentConversationProps {
   lastCompactionAt?: number;
   lastCompactionSummaryPreview?: string;
   messages: AiAgentMessageCardViewModel[];
+  tabId: string;
   onContinue: (toolName: string) => void;
   onCopyPath: (path: string) => void;
   onCopySummary: (summary: string) => void;
@@ -33,6 +34,7 @@ export const AiAgentConversation = ({
   lastCompactionAt,
   lastCompactionSummaryPreview,
   messages,
+  tabId,
   onContinue,
   onCopyPath,
   onCopySummary,
@@ -111,6 +113,7 @@ export const AiAgentConversation = ({
             {messages.map((message) => (
               <AiAgentMessageCard
                 key={message.id}
+                tabId={tabId}
                 message={message}
                 onContinue={onContinue}
                 onCopyPath={onCopyPath}

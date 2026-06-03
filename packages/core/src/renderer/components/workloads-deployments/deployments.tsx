@@ -6,12 +6,14 @@
 
 import "./deployments.scss";
 
+import { Tooltip } from "@freelensapp/tooltip";
 import { withInjectables } from "@ogre-tools/injectable-react";
 import { observer } from "mobx-react";
 import React from "react";
 import eventStoreInjectable from "../events/store.injectable";
 import { KubeObjectAge } from "../kube-object/age";
-import { KubeObjectConditionsList } from "../kube-object-conditions";
+import { getClassName, getTooltip } from "../kube-object-conditions/components";
+import { pickDeploymentListCondition } from "../kube-object-conditions/utils";
 import { KubeObjectListLayout } from "../kube-object-list-layout";
 import { SiblingsInTabLayout } from "../layout/siblings-in-tab-layout";
 import { NamespaceSelectBadge } from "../namespaces/namespace-select-badge";
@@ -45,6 +47,27 @@ function getReplicas(deployment: Deployment) {
   const availableReplicas = deployment.status?.availableReplicas || 0;
   return `${availableReplicas}/${replicas}`;
 }
+
+const DeploymentConditionsCell = observer(({ deployment }: { deployment: Deployment }) => {
+  const condition = pickDeploymentListCondition(deployment.status?.conditions ?? []);
+
+  if (!condition) {
+    return null;
+  }
+
+  const { type } = condition;
+  const id = `list-${deployment.getId()}-condition-${type}`;
+  const name = condition.status === "False" || condition.status === "Unknown" ? `Not${type}` : type;
+
+  return (
+    <div id={id} className={getClassName(condition, "condition")}>
+      {name}
+      <Tooltip targetId={id} formatters={{ tableView: true }}>
+        {getTooltip(condition, id)}
+      </Tooltip>
+    </div>
+  );
+});
 
 @observer
 class NonInjectedDeployments extends React.Component<Dependencies> {
@@ -104,7 +127,7 @@ class NonInjectedDeployments extends React.Component<Dependencies> {
             deployment.status?.updatedReplicas || 0,
             deployment.status?.availableReplicas || 0,
             <KubeObjectAge key="age" object={deployment} />,
-            <KubeObjectConditionsList key="conditions" object={deployment} />,
+            <DeploymentConditionsCell key="conditions" deployment={deployment} />,
           ]}
         />
       </SiblingsInTabLayout>

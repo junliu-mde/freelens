@@ -19,6 +19,8 @@ const defaultConditionTypePriorities: Record<string, number> = {
   Initialized: 4,
   Ready: 5,
   Synced: 6,
+  Available: 7,
+  Progressing: 8,
 };
 
 /**
@@ -34,4 +36,38 @@ export function sortConditions(
       timeToUnix(b.lastTransitionTime) - timeToUnix(a.lastTransitionTime) ||
       (conditionTypePriorities[b.type] ?? 0) - (conditionTypePriorities[a.type] ?? 0),
   );
+}
+
+const deploymentListConditionOrder = ["Available", "Progressing"] as const;
+
+/**
+ * Pick the single deployment condition to show in list views.
+ * Prefer Available when healthy; otherwise show Progressing or the first failing condition.
+ */
+export function pickDeploymentListCondition(conditions: Condition[]): Condition | undefined {
+  if (!conditions.length) {
+    return undefined;
+  }
+
+  const byType = Object.fromEntries(conditions.map((condition) => [condition.type, condition]));
+  const available = byType.Available;
+  const progressing = byType.Progressing;
+
+  if (available?.status === "True") {
+    return available;
+  }
+
+  if (progressing?.status === "True") {
+    return progressing;
+  }
+
+  for (const type of deploymentListConditionOrder) {
+    const condition = byType[type];
+
+    if (condition) {
+      return condition;
+    }
+  }
+
+  return conditions[0];
 }

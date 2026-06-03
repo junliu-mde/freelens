@@ -12,9 +12,11 @@ import { withInjectables } from "@ogre-tools/injectable-react";
 import { clipboard, shell } from "electron";
 import { observer } from "mobx-react";
 import React from "react";
+import { WindowAction } from "../../../../common/ipc/window";
 import { normalizeAiAgentSettings } from "../../../../features/ai-agent/common/settings";
 import userPreferencesStateInjectable from "../../../../features/user-preferences/common/state.injectable";
 import hostedClusterInjectable from "../../../cluster-frame-context/hosted-cluster.injectable";
+import { requestWindowAction } from "../../../ipc";
 import abortAiAgentMessageInjectable from "../../../ipc/abort-ai-agent-message.injectable";
 import sendAiAgentMessageInjectable from "../../../ipc/send-ai-agent-message.injectable";
 import dockStoreInjectable from "../dock/store.injectable";
@@ -93,7 +95,7 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
     tabId,
     userPreferencesState,
   } = props;
-  const data = aiAgentTabStore.initTab(tabId);
+  const data = aiAgentTabStore.getData(tabId) ?? aiAgentTabStore.initTab(tabId);
   const currentSession = aiAgentTabStore.getSession(data.sessionId);
   const clusterDisplayName = hostedCluster?.name.get();
   const sessions = aiAgentTabStore.getSessionsForCluster(data.clusterId);
@@ -113,36 +115,110 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
   const conversationVersion = buildConversationVersion(data.messages);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const restoredDraftFocusRef = React.useRef<string>();
-  const deferredFocusTimeoutRef = React.useRef<number>();
+  const isComposingRef = React.useRef(false);
   const latestRunRef = React.useRef<{ activeRunId?: string; status: AiAgentTabStatus }>({
     activeRunId: data.activeRunId,
     status: data.status,
   });
   const [isSessionMenuOpen, setIsSessionMenuOpen] = React.useState(false);
-  const focusComposer = React.useCallback(() => {
-    window.clearTimeout(deferredFocusTimeoutRef.current);
 
-    const focusTextarea = () => {
-      const textarea = textareaRef.current;
+  React.useEffect(() => {
+    aiAgentTabStore.createTabState(tabId);
+  }, [aiAgentTabStore, tabId]);
 
-      if (!textarea) {
-        return;
-      }
-
-      window.focus();
-      textarea.focus();
-      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-    };
-
-    window.requestAnimationFrame(() => {
-      focusTextarea();
-      deferredFocusTimeoutRef.current = window.setTimeout(focusTextarea, 250);
-    });
+  const requestWebContentsFocus = React.useCallback(() => {
+    try {
+      void requestWindowAction(WindowAction.FOCUS_WEB_CONTENTS);
+    } catch {
+      // Tests render this view without the legacy renderer DI globals.
+    }
   }, []);
+  const focusComposer = React.useCallback(
+    (cursor: "end" | "preserve" = "end") => {
+      const performFocus = () => {
+        requestWebContentsFocus();
+
+        const textarea = textareaRef.current;
+
+        if (!textarea || isComposingRef.current) {
+          return;
+        }
+
+        const alreadyFocused = document.activeElement === textarea;
+
+        if (!alreadyFocused) {
+          window.focus();
+          textarea.focus();
+        }
+
+        if (cursor !== "end") {
+          return;
+        }
+
+        const end = textarea.value.length;
+
+        if (!alreadyFocused || textarea.selectionStart !== end || textarea.selectionEnd !== end) {
+          textarea.setSelectionRange(end, end);
+        }
+      };
+
+      window.requestAnimationFrame(performFocus);
+      window.setTimeout(performFocus, 50);
+    },
+    [requestWebContentsFocus],
+  );
   const closeSessionMenu = React.useCallback(() => {
     setIsSessionMenuOpen(false);
-    focusComposer();
+    focusComposer("end");
   }, [focusComposer]);
+  const routeComposerKeyInput = React.useCallback(
+    (
+      event: {
+        altKey: boolean;
+        ctrlKey: boolean;
+        key: string;
+        metaKey: boolean;
+        preventDefault: () => void;
+        shiftKey: boolean;
+        target: EventTarget | null;
+      },
+      isComposing = false,
+    ) => {
+      const textarea = textareaRef.current;
+
+      if (!textarea || isComposing || isComposingRef.current || event.altKey || event.ctrlKey || event.metaKey) {
+        return false;
+      }
+
+      const targetElement =
+        event.target instanceof HTMLElement
+          ? event.target
+          : document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+      const dockElement = targetElement?.closest(".Dock");
+      const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const editableTarget = targetElement?.closest(
+        'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="textbox"]',
+      );
+
+      if (!dockElement || activeElement === textarea || targetElement === textarea) {
+        return false;
+      }
+
+      if (editableTarget && editableTarget !== textarea) {
+        return false;
+      }
+
+      if (event.key.length === 1) {
+        focusComposer("end");
+        return true;
+      }
+
+      return false;
+    },
+    [focusComposer],
+  );
 
   latestRunRef.current = {
     activeRunId: data.activeRunId,
@@ -153,20 +229,20 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
     const restoreFocusKey = `${tabId}:${data.sessionId}`;
     const activeElement = document.activeElement;
     const activeElementInsideAiAgent = activeElement instanceof HTMLElement && activeElement.closest(".AiAgent");
+
     const shouldRestoreFocus =
-      !isSessionMenuOpen && (Boolean(data.inputDraft) || data.messages.length === 0 || !activeElementInsideAiAgent);
+      !isSessionMenuOpen && !activeElementInsideAiAgent && (Boolean(data.inputDraft) || data.messages.length === 0);
 
     if (!shouldRestoreFocus || restoredDraftFocusRef.current === restoreFocusKey) {
       return;
     }
 
     restoredDraftFocusRef.current = restoreFocusKey;
-    focusComposer();
+    focusComposer("end");
   }, [data.inputDraft, data.messages.length, data.sessionId, focusComposer, isSessionMenuOpen, tabId]);
 
   React.useEffect(
     () => () => {
-      window.clearTimeout(deferredFocusTimeoutRef.current);
       const latestRun = latestRunRef.current;
 
       if (latestRun.activeRunId && isActiveRun(latestRun.status)) {
@@ -182,7 +258,7 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
         dockStore.onTabChange(
           ({ tabId: selectedTabId }) => {
             if (selectedTabId === tabId) {
-              focusComposer();
+              focusComposer("end");
             }
           },
           { fireImmediately: true },
@@ -194,6 +270,37 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
   const togglePermissionMode = () => {
     aiAgentTabStore.togglePermissionMode(tabId);
   };
+
+  React.useEffect(() => {
+    const onWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Tab" && event.shiftKey && !event.isComposing) {
+        const targetElement =
+          event.target instanceof HTMLElement
+            ? event.target
+            : document.activeElement instanceof HTMLElement
+              ? document.activeElement
+              : null;
+
+        if (targetElement?.closest(".Dock")) {
+          event.preventDefault();
+          event.stopPropagation();
+          togglePermissionMode();
+        }
+
+        return;
+      }
+
+      if (routeComposerKeyInput(event, event.isComposing)) {
+        event.stopPropagation();
+      }
+    };
+
+    window.addEventListener("keydown", onWindowKeyDown, true);
+
+    return () => {
+      window.removeEventListener("keydown", onWindowKeyDown, true);
+    };
+  }, [routeComposerKeyInput, togglePermissionMode]);
 
   const sendMessage = () => {
     const text = data.inputDraft.trim();
@@ -239,12 +346,12 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
   const startNewSession = () => {
     aiAgentTabStore.newSession(tabId);
     setIsSessionMenuOpen(false);
-    focusComposer();
+    focusComposer("end");
   };
 
   const setDraft = (value: string) => {
     aiAgentTabStore.setInputDraft(tabId, value);
-    focusComposer();
+    focusComposer("end");
   };
 
   const handleRetry = (toolName: string, command?: string) => {
@@ -284,7 +391,11 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
         if (event.key === "Tab" && event.shiftKey && !event.nativeEvent.isComposing) {
           event.preventDefault();
           togglePermissionMode();
+
+          return;
         }
+
+        routeComposerKeyInput(event, event.nativeEvent.isComposing);
       }}
     >
       <AiAgentHeader
@@ -316,6 +427,7 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
         lastCompactionAt={data.lastCompactionAt}
         lastCompactionSummaryPreview={data.lastCompactionSummaryPreview}
         messages={conversation}
+        tabId={tabId}
         onContinue={handleContinue}
         onCopyPath={copyPath}
         onCopySummary={copySummary}
@@ -329,6 +441,13 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
         contextIndicator={contextIndicator}
         inputDraft={data.inputDraft}
         onChange={(value) => aiAgentTabStore.setInputDraft(tabId, value)}
+        onCompositionEnd={(value) => {
+          isComposingRef.current = false;
+          aiAgentTabStore.setInputDraft(tabId, value);
+        }}
+        onCompositionStart={() => {
+          isComposingRef.current = true;
+        }}
         onRequestFocus={focusComposer}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {

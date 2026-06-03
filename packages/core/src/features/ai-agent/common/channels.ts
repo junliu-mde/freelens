@@ -7,6 +7,7 @@
 export const aiAgentSendChannel = "ai-agent:send";
 export const aiAgentAbortChannel = "ai-agent:abort";
 export const aiAgentStreamEventChannel = "ai-agent:stream-event";
+export const aiAgentAskResponseChannel = "ai-agent:ask-response";
 
 export type AiAgentPermissionMode = "read-only" | "read-write";
 

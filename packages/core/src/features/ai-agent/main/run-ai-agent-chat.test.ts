@@ -11,6 +11,7 @@ const Type = {
   Literal: jest.fn((value) => value),
   Boolean: jest.fn((value) => value),
   Number: jest.fn((value) => value),
+  Array: jest.fn((value) => value),
 };
 
 jest.mock(
@@ -68,7 +69,10 @@ describe("run-ai-agent-chat", () => {
     model: "some-model",
     reasoningEffort: "off",
     maxTokens: 512,
+    temperature: undefined,
     enableKubectlTools: true,
+    enableMcpTools: true,
+    mcpConfigPath: "~/.mcp.json",
     maxToolIterations: 1,
     enableCompaction: true,
     compactionReserveTokens: 16_384,
@@ -317,7 +321,7 @@ describe("run-ai-agent-chat", () => {
       requestWithLongHistory,
       {
         ...settings,
-        compactionReserveTokens: 127_500,
+        compactionReserveTokens: 199_500,
         compactionKeepRecentTokens: 1,
       },
       "cluster-1" as never,
@@ -340,5 +344,129 @@ describe("run-ai-agent-chat", () => {
       role: "user",
       content: "latest question",
     });
+  });
+
+  it("suspends execution when ask tool is called and resumes when handleAskResponse is called", async () => {
+    const executeKubectlTool = jest.fn();
+    const events: AiAgentStreamEvent[] = [];
+
+    const askToolCall = {
+      type: "toolCall" as const,
+      id: "ask-call-id",
+      name: "ask",
+      arguments: {
+        questions: [
+          {
+            id: "namespace",
+            question: "Which namespace?",
+            options: [{ label: "default" }],
+          },
+        ],
+      },
+    };
+
+    streamMock.mockReturnValue(
+      (async function* () {
+        yield { type: "toolcall_start", contentIndex: 0 };
+        yield {
+          type: "toolcall_end",
+          toolCall: askToolCall,
+        };
+        yield {
+          type: "done",
+          message: {
+            role: "assistant",
+            content: [askToolCall],
+            timestamp: 100,
+          },
+        };
+      })() as never,
+    );
+
+    setTimeout(() => {
+      const { AiAgentChatSession } = require("./ai-agent-chat-session");
+      AiAgentChatSession.handleAskResponse("tab-1", "run-1", "ask-call-id", [
+        {
+          id: "namespace",
+          selectedOptions: ["default"],
+        },
+      ]);
+    }, 50);
+
+    await runAiAgentChat(
+      request,
+      settings,
+      "cluster-1" as never,
+      executeKubectlTool,
+      (event) => events.push(event),
+      new AbortController().signal,
+    );
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool-result",
+        toolCallId: "ask-call-id",
+        content: "User answers:\nnamespace: default",
+        isError: false,
+        details: {
+          results: [{ id: "namespace", selectedOptions: ["default"] }],
+        },
+      }),
+    );
+  });
+
+  it("recovers gracefully and stringifies non-string content returned from tools", async () => {
+    const events: AiAgentStreamEvent[] = [];
+    const complexResult = { status: "Active", replicas: 3 };
+
+    const executeKubectlTool = jest.fn(async () => ({
+      content: complexResult as any,
+      isError: false,
+    }));
+
+    const mockToolCall = {
+      type: "toolCall" as const,
+      id: "call-xyz",
+      name: "kubectl_get",
+      arguments: {
+        resource: "pods",
+      },
+    };
+
+    streamMock.mockReturnValue(
+      (async function* () {
+        yield { type: "toolcall_start", contentIndex: 0 };
+        yield {
+          type: "toolcall_end",
+          toolCall: mockToolCall,
+        };
+        yield {
+          type: "done",
+          message: {
+            role: "assistant",
+            content: [mockToolCall],
+            timestamp: 100,
+          },
+        };
+      })() as never,
+    );
+
+    await runAiAgentChat(
+      request,
+      settings,
+      "cluster-1" as never,
+      executeKubectlTool,
+      (event) => events.push(event),
+      new AbortController().signal,
+    );
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool-result",
+        toolCallId: "call-xyz",
+        content: JSON.stringify(complexResult),
+        isError: false,
+      }),
+    );
   });
 });

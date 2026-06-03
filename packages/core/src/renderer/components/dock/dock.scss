@@ -8,6 +8,7 @@
 
 .Dock {
   position: relative;
+  z-index: 2;
   background: var(--dockHeadBackground);
   display: flex;
   flex-direction: column;

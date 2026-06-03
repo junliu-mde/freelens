@@ -39,6 +39,7 @@ describe("<AiAgentConversation />", () => {
     const onScrollStateChange = jest.fn();
     const result = render(
       <AiAgentConversation
+        tabId="tab-id"
         conversationVersion="v1"
         hasUnreadBelow={false}
         isNearBottom={true}
@@ -57,6 +58,7 @@ describe("<AiAgentConversation />", () => {
 
     result.rerender(
       <AiAgentConversation
+        tabId="tab-id"
         conversationVersion="v2"
         hasUnreadBelow={false}
         isNearBottom={true}
@@ -86,6 +88,7 @@ describe("<AiAgentConversation />", () => {
     const onScrollStateChange = jest.fn();
     const result = render(
       <AiAgentConversation
+        tabId="tab-id"
         conversationVersion="v1"
         hasUnreadBelow={true}
         isNearBottom={false}
@@ -105,6 +108,7 @@ describe("<AiAgentConversation />", () => {
 
     result.rerender(
       <AiAgentConversation
+        tabId="tab-id"
         conversationVersion="v2"
         hasUnreadBelow={true}
         isNearBottom={false}
@@ -127,6 +131,7 @@ describe("<AiAgentConversation />", () => {
   it("does not show the jump button for an empty conversation", () => {
     const { queryByText } = render(
       <AiAgentConversation
+        tabId="tab-id"
         conversationVersion="v1"
         hasUnreadBelow={true}
         isNearBottom={false}
