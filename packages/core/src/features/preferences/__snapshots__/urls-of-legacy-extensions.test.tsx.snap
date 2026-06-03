@@ -134,6 +134,18 @@ exports[`preferences: URLs of legacy extensions given extension with both custom
                   </div>
                   <div
                     class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
                     data-preference-tab-link-test="proxy"
                     role="tab"
                     tabindex="0"
@@ -560,6 +572,18 @@ exports[`preferences: URLs of legacy extensions given extension with both custom
                       class="label"
                     >
                       App
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
                     </div>
                   </div>
                   <div
@@ -994,6 +1018,18 @@ exports[`preferences: URLs of legacy extensions given extension with custom pref
                   </div>
                   <div
                     class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
                     data-preference-tab-link-test="proxy"
                     role="tab"
                     tabindex="0"
@@ -1386,6 +1422,18 @@ exports[`preferences: URLs of legacy extensions given extension with custom pref
                   </div>
                   <div
                     class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
                     data-preference-tab-link-test="proxy"
                     role="tab"
                     tabindex="0"
@@ -1724,6 +1772,18 @@ exports[`preferences: URLs of legacy extensions given extension with custom pref
                       class="label"
                     >
                       App
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
                     </div>
                   </div>
                   <div

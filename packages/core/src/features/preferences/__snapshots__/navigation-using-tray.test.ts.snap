@@ -472,6 +472,18 @@ exports[`show-about-using-tray when navigating using tray renders 1`] = `
                   </div>
                   <div
                     class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
                     data-preference-tab-link-test="proxy"
                     role="tab"
                     tabindex="0"

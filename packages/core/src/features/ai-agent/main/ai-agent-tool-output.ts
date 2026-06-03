@@ -10,7 +10,7 @@ import { join } from "node:path";
 
 import type { AiAgentToolResultDetails, AiAgentToolResultTruncation } from "../common/tool-result-details";
 
-export const aiAgentToolMaxLines = 2_000;
+export const aiAgentToolMaxLines = 3_000;
 export const aiAgentToolMaxBytes = 50 * 1024;
 
 export interface AiAgentToolExecutionPayload {
@@ -36,20 +36,50 @@ const formatSize = (bytes: number) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 };
 
-const truncateStringToBytesFromEnd = (content: string, maxBytes: number) => {
-  const buffer = Buffer.from(content, "utf-8");
+const countNewlines = (content: string) => {
+  let count = 0;
+  let position = content.indexOf("\n");
 
-  if (buffer.length <= maxBytes) {
-    return content;
+  while (position !== -1) {
+    count += 1;
+    position = content.indexOf("\n", position + 1);
   }
 
-  let start = buffer.length - maxBytes;
+  return count;
+};
+
+const findUtf8BoundaryForward = (buffer: Buffer, position: number) => {
+  let start = Math.max(0, position);
 
   while (start < buffer.length && (buffer[start] & 0xc0) === 0x80) {
     start += 1;
   }
 
-  return buffer.subarray(start).toString("utf-8");
+  return start;
+};
+
+const truncateStringToBytesFromEnd = (content: string, maxBytes: number) => {
+  if (maxBytes === 0) {
+    return { text: "", bytes: 0 };
+  }
+
+  if (content.length <= maxBytes) {
+    const bytes = Buffer.byteLength(content, "utf-8");
+
+    if (bytes <= maxBytes) {
+      return { text: content, bytes };
+    }
+  }
+
+  const window = content.substring(Math.max(0, content.length - maxBytes));
+  const buffer = Buffer.from(window, "utf-8");
+  let start = Math.max(0, buffer.length - maxBytes);
+
+  start = findUtf8BoundaryForward(buffer, start);
+
+  const slice = buffer.subarray(start);
+
+  return { text: slice.toString("utf-8"), bytes: slice.length };
 };
 
 const byteLength = (content: string) => Buffer.byteLength(content, "utf-8");
@@ -60,8 +90,7 @@ export const truncateToolOutputTail = (
   maxBytes = aiAgentToolMaxBytes,
 ): AiAgentToolResultTruncation & { content: string } => {
   const totalBytes = Buffer.byteLength(content, "utf-8");
-  const lines = content.length === 0 ? [] : content.split("\n");
-  const totalLines = lines.length;
+  const totalLines = content.length === 0 ? 0 : countNewlines(content) + 1;
 
   if (totalLines <= maxLines && totalBytes <= maxBytes) {
     return {
@@ -79,38 +108,93 @@ export const truncateToolOutputTail = (
     };
   }
 
-  const outputLines: string[] = [];
+  let includedLines = 0;
   let outputBytes = 0;
   let truncatedBy: "lines" | "bytes" = "lines";
-  let lastLinePartial = false;
+  let startIndex = content.length;
+  let endIndex = content.length;
 
-  for (let index = lines.length - 1; index >= 0 && outputLines.length < maxLines; index -= 1) {
-    const line = lines[index];
-    const lineBytes = Buffer.byteLength(line, "utf-8") + (outputLines.length > 0 ? 1 : 0);
+  while (includedLines < maxLines) {
+    const newlineIndex = content.lastIndexOf("\n", endIndex - 1);
+    const lineStart = newlineIndex === -1 ? 0 : newlineIndex + 1;
+    const separatorBytes = includedLines > 0 ? 1 : 0;
+    const remainingBytes = maxBytes - outputBytes - separatorBytes;
 
-    if (outputBytes + lineBytes > maxBytes) {
+    if (remainingBytes < 0) {
+      truncatedBy = "bytes";
+      break;
+    }
+
+    const lineLength = endIndex - lineStart;
+
+    if (lineLength > remainingBytes) {
       truncatedBy = "bytes";
 
-      if (outputLines.length === 0) {
-        const truncatedLine = truncateStringToBytesFromEnd(line, maxBytes);
+      if (includedLines === 0) {
+        const windowStart = Math.max(lineStart, endIndex - maxBytes);
+        const truncatedLine = truncateStringToBytesFromEnd(content.substring(windowStart, endIndex), maxBytes);
 
-        outputLines.unshift(truncatedLine);
-        outputBytes = Buffer.byteLength(truncatedLine, "utf-8");
-        lastLinePartial = true;
+        return {
+          content: truncatedLine.text,
+          truncated: true,
+          truncatedBy,
+          totalLines,
+          totalBytes,
+          outputLines: 1,
+          outputBytes: truncatedLine.bytes,
+          lastLinePartial: true,
+          firstLineExceedsLimit: false,
+          maxLines,
+          maxBytes,
+        };
       }
 
       break;
     }
 
-    outputLines.unshift(line);
-    outputBytes += lineBytes;
+    const line = content.slice(lineStart, endIndex);
+    const lineBytes = Buffer.byteLength(line, "utf-8");
+
+    if (lineBytes > remainingBytes) {
+      truncatedBy = "bytes";
+
+      if (includedLines === 0) {
+        const truncatedLine = truncateStringToBytesFromEnd(line, maxBytes);
+
+        return {
+          content: truncatedLine.text,
+          truncated: true,
+          truncatedBy,
+          totalLines,
+          totalBytes,
+          outputLines: 1,
+          outputBytes: truncatedLine.bytes,
+          lastLinePartial: true,
+          firstLineExceedsLimit: false,
+          maxLines,
+          maxBytes,
+        };
+      }
+
+      break;
+    }
+
+    outputBytes += separatorBytes + lineBytes;
+    includedLines += 1;
+    startIndex = lineStart;
+
+    if (newlineIndex === -1) {
+      break;
+    }
+
+    endIndex = newlineIndex;
   }
 
-  if (outputLines.length >= maxLines && outputBytes <= maxBytes) {
+  if (includedLines >= maxLines && outputBytes <= maxBytes) {
     truncatedBy = "lines";
   }
 
-  const truncatedContent = outputLines.join("\n");
+  const truncatedContent = content.slice(startIndex);
 
   return {
     content: truncatedContent,
@@ -118,9 +202,9 @@ export const truncateToolOutputTail = (
     truncatedBy,
     totalLines,
     totalBytes,
-    outputLines: outputLines.length,
-    outputBytes: Buffer.byteLength(truncatedContent, "utf-8"),
-    lastLinePartial,
+    outputLines: includedLines,
+    outputBytes,
+    lastLinePartial: false,
     firstLineExceedsLimit: false,
     maxLines,
     maxBytes,

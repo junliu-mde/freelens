@@ -663,7 +663,32 @@ exports[`reactively hide kube object detail item renders 1`] = `
             class="Menu MenuActions flex KubeObjectMenu toolbar gaps right bottom"
             data-testid="menu-actions-for-kube-object-menu-for-some-uid"
             id="menu-actions-for-kube-object-menu-for-some-uid"
-          />
+          >
+            <li
+              class="MenuItem"
+              tabindex="0"
+            >
+              <i
+                class="Icon material interactive focusable"
+                tabindex="0"
+              >
+                <span
+                  class="icon"
+                  data-icon-name="smart_toy"
+                >
+                  smart_toy
+                </span>
+              </i>
+              <div>
+                Ask AI
+              </div>
+              <span
+                class="title"
+              >
+                Ask AI
+              </span>
+            </li>
+          </ul>
           <i
             class="Icon material interactive focusable"
             tabindex="0"
@@ -1408,7 +1433,32 @@ exports[`reactively hide kube object detail item when the item is shown renders 
             class="Menu MenuActions flex KubeObjectMenu toolbar gaps right bottom"
             data-testid="menu-actions-for-kube-object-menu-for-some-uid"
             id="menu-actions-for-kube-object-menu-for-some-uid"
-          />
+          >
+            <li
+              class="MenuItem"
+              tabindex="0"
+            >
+              <i
+                class="Icon material interactive focusable"
+                tabindex="0"
+              >
+                <span
+                  class="icon"
+                  data-icon-name="smart_toy"
+                >
+                  smart_toy
+                </span>
+              </i>
+              <div>
+                Ask AI
+              </div>
+              <span
+                class="title"
+              >
+                Ask AI
+              </span>
+            </li>
+          </ul>
           <i
             class="Icon material interactive focusable"
             tabindex="0"

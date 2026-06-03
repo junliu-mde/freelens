@@ -13,7 +13,6 @@ function condition(type: string, status: string): Condition {
     type,
     status,
     lastTransitionTime: "2026-05-21T08:17:46Z",
-    lastUpdateTime: "2026-05-21T08:17:46Z",
     reason: "Test",
     message: "Test",
   };

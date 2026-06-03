@@ -14,7 +14,7 @@ export const getTableColumnOrderInjectable = getInjectable({
   instantiate: (di): GetTableColumnOrder => {
     const state = di.inject(userPreferencesStateInjectable);
 
-    return (tableId) => state.tableColumnOrder.get(tableId);
+    return (tableId) => state.tableColumnOrder?.get(tableId);
   },
 });
 
@@ -26,7 +26,7 @@ export const setTableColumnOrderInjectable = getInjectable({
     const state = di.inject(userPreferencesStateInjectable);
 
     return action((tableId, columnIds) => {
-      state.tableColumnOrder.set(tableId, columnIds);
+      state.tableColumnOrder?.set(tableId, columnIds);
     });
   },
 });

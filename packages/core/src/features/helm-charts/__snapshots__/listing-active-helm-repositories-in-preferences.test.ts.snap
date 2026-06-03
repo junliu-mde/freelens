@@ -110,6 +110,18 @@ exports[`listing active helm repositories in preferences when navigating to pref
                   </div>
                   <div
                     class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
                     data-preference-tab-link-test="proxy"
                     role="tab"
                     tabindex="0"
@@ -899,6 +911,18 @@ exports[`listing active helm repositories in preferences when navigating to pref
                       class="label"
                     >
                       App
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
                     </div>
                   </div>
                   <div
@@ -1724,6 +1748,18 @@ exports[`listing active helm repositories in preferences when navigating to pref
                   </div>
                   <div
                     class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
                     data-preference-tab-link-test="proxy"
                     role="tab"
                     tabindex="0"
@@ -2430,6 +2466,18 @@ exports[`listing active helm repositories in preferences when navigating to pref
                       class="label"
                     >
                       App
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
                     </div>
                   </div>
                   <div
@@ -3226,6 +3274,18 @@ exports[`listing active helm repositories in preferences when navigating to pref
                       class="label"
                     >
                       App
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
                     </div>
                   </div>
                   <div
@@ -4095,6 +4155,18 @@ exports[`listing active helm repositories in preferences when navigating to pref
                   </div>
                   <div
                     class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
                     data-preference-tab-link-test="proxy"
                     role="tab"
                     tabindex="0"
@@ -4805,6 +4877,18 @@ exports[`listing active helm repositories in preferences when navigating to pref
                   </div>
                   <div
                     class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
                     data-preference-tab-link-test="proxy"
                     role="tab"
                     tabindex="0"
@@ -5511,6 +5595,18 @@ exports[`listing active helm repositories in preferences when navigating to pref
                       class="label"
                     >
                       App
+                    </div>
+                  </div>
+                  <div
+                    class="Tab flex gaps align-center"
+                    data-preference-tab-link-test="ai-agent"
+                    role="tab"
+                    tabindex="0"
+                  >
+                    <div
+                      class="label"
+                    >
+                      AI Agent
                     </div>
                   </div>
                   <div

@@ -4,6 +4,10 @@
  * Licensed under MIT License. See LICENSE in root directory for more information.
  */
 module.exports = (path, options) => {
+  if (path === "@earendil-works/pi-ai") {
+    return require("path").resolve(__dirname, "test-env/pi-ai-mock.ts");
+  }
+
   // Call the defaultResolver, so we leverage its cache, error handling, etc.
   return options.defaultResolver(path, {
     ...options,
@@ -27,6 +31,12 @@ module.exports = (path, options) => {
         case "jose":
           delete pkg["exports"];
           delete pkg["module"];
+          break;
+        case "pkce-challenge":
+          if (pkg.exports && pkg.exports["."]) {
+            pkg.exports["."]["browser"] = pkg.exports["."]["node"];
+          }
+          pkg["browser"] = "./dist/index.node.cjs";
           break;
       }
 
