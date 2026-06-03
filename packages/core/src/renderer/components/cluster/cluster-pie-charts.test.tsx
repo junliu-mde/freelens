@@ -5,27 +5,30 @@
  */
 
 import "@testing-library/jest-dom";
-import { act, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { computed, observable } from "mobx";
 import React from "react";
 import { getDiForUnitTesting } from "../../getDiForUnitTesting";
 import activeThemeInjectable from "../../themes/active.injectable";
 import { renderFor } from "../test-utils/renderFor";
+import { GPU_RESOURCE_KEY } from "../nodes/gpu-capacity";
 import clusterOverviewMetricsInjectable from "./cluster-metrics.injectable";
-import { ClusterPieCharts } from "./cluster-pie-charts";
+import { ClusterPieCharts, NonInjectedClusterPieCharts } from "./cluster-pie-charts";
 import selectedMetricsTimeRangeInjectable from "./overview/selected-metrics-time-range.injectable";
 import selectedNodeRoleForMetricsInjectable from "./overview/selected-node-role-for-metrics.injectable";
 
-import type { MetricData } from "../../../common/k8s-api/endpoints/metrics.api";
+import type { Node } from "@freelensapp/kube-object";
 
-const pieChartMock = jest.fn();
+import type { MetricData } from "../../../common/k8s-api/endpoints/metrics.api";
+import type { ClusterMetricData } from "../../../common/k8s-api/endpoints/metrics.api/request-cluster-metrics-by-node-names.injectable";
 
 jest.mock("../chart", () => ({
-  PieChart: (props: unknown) => {
-    pieChartMock(props);
-
-    return <div data-testid="cluster-pie-chart" />;
-  },
+  PieChart: ({ title, children }: { title: string; children?: React.ReactNode }) => (
+    <div>
+      {title}
+      {children}
+    </div>
+  ),
 }));
 
 jest.mock("@freelensapp/spinner", () => ({
@@ -47,11 +50,20 @@ function metricWithValue(value: string): MetricData {
   };
 }
 
-describe("ClusterPieCharts", () => {
-  beforeEach(() => {
-    pieChartMock.mockReset();
-  });
+const createMetric = (value: number): MetricData => ({
+  status: "success",
+  data: {
+    resultType: "matrix",
+    result: [
+      {
+        metric: {},
+        values: [[1, String(value)]],
+      },
+    ],
+  },
+});
 
+describe("ClusterPieCharts", () => {
   it("does not render stale pie charts on first mount while a reused singleton is pending", () => {
     const di = getDiForUnitTesting();
     const render = renderFor(di);
@@ -103,7 +115,7 @@ describe("ClusterPieCharts", () => {
 
     render(<ClusterPieCharts />);
 
-    expect(screen.queryByTestId("cluster-pie-chart")).not.toBeInTheDocument();
+    expect(screen.queryByText("CPU")).not.toBeInTheDocument();
     expect(screen.getByTestId("spinner")).toBeInTheDocument();
   });
 
@@ -161,14 +173,66 @@ describe("ClusterPieCharts", () => {
 
     render(<ClusterPieCharts />);
 
-    expect(screen.getAllByTestId("cluster-pie-chart")).toHaveLength(3);
+    expect(screen.getAllByText("CPU")).toHaveLength(1);
 
     act(() => {
       pending.set(true);
       timeRange.set({ duration: null, customStart: 300, customEnd: 400 });
     });
 
-    expect(screen.queryByTestId("cluster-pie-chart")).not.toBeInTheDocument();
+    expect(screen.queryByText("CPU")).not.toBeInTheDocument();
     expect(screen.getByTestId("spinner")).toBeInTheDocument();
+  });
+
+  it("renders gpu data when cluster gpu metrics are missing", () => {
+    const node = {
+      getConditions: () => [{ type: "Ready", status: "True" }],
+      getName: () => "gpu-node-1",
+      isUnschedulable: () => false,
+      status: {
+        allocatable: {
+          [GPU_RESOURCE_KEY]: "8",
+        },
+      },
+    } as unknown as Node;
+    const clusterMetrics = {
+      memoryUsage: createMetric(4),
+      memoryRequests: createMetric(3),
+      memoryLimits: createMetric(5),
+      memoryCapacity: createMetric(10),
+      memoryAllocatableCapacity: createMetric(8),
+      cpuUsage: createMetric(2),
+      cpuRequests: createMetric(1),
+      cpuLimits: createMetric(3),
+      cpuCapacity: createMetric(4),
+      cpuAllocatableCapacity: createMetric(4),
+      podUsage: createMetric(20),
+      podCapacity: createMetric(100),
+      podAllocatableCapacity: createMetric(80),
+      fsSize: createMetric(100),
+      fsUsage: createMetric(40),
+      gpuCapacity: undefined,
+      gpuAllocatableCapacity: undefined,
+      gpuRequests: undefined,
+    } as unknown as ClusterMetricData;
+
+    render(
+      <NonInjectedClusterPieCharts
+        requestAllNodeMetrics={jest.fn().mockResolvedValue(undefined)}
+        selectedNodeRoleForMetrics={{ nodes: { get: () => [node] } } as any}
+        clusterOverviewMetrics={{
+          pending: { get: () => false },
+          value: { get: () => clusterMetrics },
+        } as any}
+        activeTheme={{ get: () => ({ colors: { pieChartDefaultColor: "#1f1f1f" } }) } as any}
+        selectedMetricsTimeRange={{
+          value: { get: () => ({ duration: null, customStart: 100, customEnd: 200 }) },
+        } as any}
+        podStore={{ items: [] } as any}
+      />,
+    );
+
+    expect(screen.getByText("GPU")).toBeInTheDocument();
+    expect(screen.getByText("Free nodes: 1")).toBeInTheDocument();
   });
 });

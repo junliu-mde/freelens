@@ -56,7 +56,7 @@ export const setupIpcMainHandlers = ({
     }
   });
 
-  ipcMainHandle(windowActionHandleChannel, (event, action) => handleWindowAction(action));
+  ipcMainHandle(windowActionHandleChannel, (event, action) => handleWindowAction(action, event));
 
   ipcMainOn(windowLocationChangedChannel, () => onLocationChange());
 

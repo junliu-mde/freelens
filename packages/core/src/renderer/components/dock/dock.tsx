@@ -13,10 +13,10 @@ import { cssNames } from "@freelensapp/utilities";
 import { withInjectables } from "@ogre-tools/injectable-react";
 import { observer } from "mobx-react";
 import React from "react";
-import createAiAgentTabInjectable from "./ai-agent/create-ai-agent-tab.injectable";
-import { AiAgentView } from "./ai-agent/view";
 import { MenuItem } from "../menu";
 import { MenuActions } from "../menu/menu-actions";
+import createAiAgentTabInjectable from "./ai-agent/create-ai-agent-tab.injectable";
+import { AiAgentView } from "./ai-agent/view";
 import createResourceTabInjectable from "./create-resource/create-resource-tab.injectable";
 import { CreateResource } from "./create-resource/view";
 import { TabKind } from "./dock/store";
@@ -98,7 +98,10 @@ class NonInjectedDock extends React.Component<DockProps & Dependencies> {
 
     open();
     selectTab(tab.id);
-    this.element.current?.focus();
+
+    if (tab.kind !== TabKind.AI_AGENT) {
+      this.element.current?.focus();
+    }
   };
 
   switchToNextTab = (selectedTab: DockTab, direction: Direction) => {
@@ -117,7 +120,7 @@ class NonInjectedDock extends React.Component<DockProps & Dependencies> {
   renderTab(tab: DockTab) {
     switch (tab.kind) {
       case TabKind.AI_AGENT:
-        return <AiAgentView tabId={tab.id} />;
+        return <AiAgentView key={tab.id} tabId={tab.id} />;
       case TabKind.CREATE_RESOURCE:
         return <CreateResource tabId={tab.id} />;
       case TabKind.EDIT_RESOURCE:
@@ -167,7 +170,12 @@ class NonInjectedDock extends React.Component<DockProps & Dependencies> {
           onDrag={(extent) => (dockStore.height = extent)}
         />
         <div className="tabs-container flex align-center">
-          <DockTabs tabs={tabs} selectedTab={selectedTab} autoFocus={isOpen} onChangeTab={this.onChangeTab} />
+          <DockTabs
+            tabs={tabs}
+            selectedTab={selectedTab}
+            autoFocus={Boolean(isOpen && selectedTab?.kind !== TabKind.AI_AGENT)}
+            onChangeTab={this.onChangeTab}
+          />
           <div className={cssNames("toolbar flex gaps align-center box grow", { "pl-0": tabs.length == 0 })}>
             <div className="dock-menu box grow">
               <MenuActions

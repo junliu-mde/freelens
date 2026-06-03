@@ -8,12 +8,14 @@ import { onceDefined } from "@freelensapp/utilities";
 import assert from "assert";
 import { action, makeObservable, observable, when } from "mobx";
 import { getClusterFrameUrl } from "../../../common/utils";
+import { TabKind } from "../dock/dock/store";
 
 import type { Logger } from "@freelensapp/logger";
 import type { Disposer } from "@freelensapp/utilities";
 
 import type { ClusterId } from "../../../common/cluster-types";
 import type { GetClusterById } from "../../../features/cluster/storage/common/get-by-id.injectable";
+import type { DockStore } from "../dock/dock/store";
 
 export interface LensView {
   isLoaded: boolean;
@@ -24,7 +26,26 @@ interface Dependencies {
   readonly logger: Logger;
   getClusterById: GetClusterById;
   emitClusterVisibility: (clusterId: ClusterId | null) => void;
+  dockStore?: DockStore;
 }
+
+const shouldFocusVisibleClusterFrame = (dockStore?: DockStore) => {
+  if (dockStore && dockStore.isOpen && dockStore.selectedTab?.kind === TabKind.AI_AGENT) {
+    return false;
+  }
+
+  const activeElement = document.activeElement;
+
+  if (!(activeElement instanceof HTMLElement)) {
+    return true;
+  }
+
+  if (activeElement === document.body || activeElement === document.documentElement) {
+    return true;
+  }
+
+  return activeElement.tagName === "IFRAME";
+};
 
 export class ClusterFrameHandler {
   private readonly views = observable.map<string, LensView>();
@@ -141,7 +162,11 @@ export class ClusterFrameHandler {
         (view: LensView) => {
           this.dependencies.logger.info(`[LENS-VIEW]: cluster id=${clusterId} should now be visible`);
           view.frame.classList.remove("hidden");
-          view.frame.focus();
+
+          if (shouldFocusVisibleClusterFrame(this.dependencies.dockStore)) {
+            view.frame.focus();
+          }
+
           this.dependencies.emitClusterVisibility(clusterId);
         },
       );

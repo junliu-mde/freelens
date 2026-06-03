@@ -4,17 +4,19 @@
  */
 
 import { stream, validateToolCall } from "@earendil-works/pi-ai";
+import { normalizeAiAgentSettings } from "../common/settings";
 import { toAiAgentLlmMessages } from "../common/transcript";
 import { compactAiAgentConversation } from "./ai-agent-chat-compaction";
-import { createAiAgentChatContext } from "./ai-agent-chat-context";
+import { createAiAgentChatModel, createAiAgentSystemPrompt, getAiAgentKubectlTools } from "./ai-agent-chat-context";
 
 import type { AssistantMessage, Context, ToolCall, UserMessage } from "@earendil-works/pi-ai";
 
 import type { ClusterId } from "../../../common/cluster-types";
-import type { AiAgentSendRequest, AiAgentStreamEvent } from "../common/channels";
+import type { AiAgentPermissionMode, AiAgentSendRequest, AiAgentStreamEvent } from "../common/channels";
 import type { AiAgentSettings } from "../common/settings";
 import type { AiAgentToolResultDetails } from "../common/tool-result-details";
 import type { AiAgentConversationMessage, AiAgentMessagePart } from "../common/transcript";
+import type { AiAgentMcpToolSupport, CreateAiAgentMcpToolSupport } from "./ai-agent-mcp-tool-support.injectable";
 import type { ExecuteAiAgentKubectlTool } from "./execute-ai-agent-kubectl-tool.injectable";
 
 const continueAfterToolResultsPrompt =
@@ -85,6 +87,13 @@ interface AiAgentChatSessionOptions {
   executeKubectlTool: ExecuteAiAgentKubectlTool;
   emit: (event: AiAgentStreamEvent) => void;
   signal: AbortSignal;
+  createMcpToolSupport?: CreateAiAgentMcpToolSupport;
+}
+
+interface PendingAsk {
+  resolve: (value: { content: string; isError: boolean; details?: any }) => void;
+  reject: (reason: any) => void;
+  signal: AbortSignal;
 }
 
 interface StreamAssistantMessageResult {
@@ -93,32 +102,112 @@ interface StreamAssistantMessageResult {
 }
 
 export class AiAgentChatSession {
+  private static pendingAsks = new Map<string, PendingAsk>();
+
+  public static handleAskResponse(tabId: string, runId: string, toolCallId: string, results: any) {
+    const key = `${tabId}:${runId}:${toolCallId}`;
+    const pending = this.pendingAsks.get(key);
+
+    if (pending) {
+      this.pendingAsks.delete(key);
+      const responseParts: string[] = [];
+      const formattedResults: any[] = [];
+
+      for (const res of results) {
+        formattedResults.push(res);
+        if (res.selectedOptions && res.selectedOptions.length > 0) {
+          responseParts.push(`${res.id}: ${res.selectedOptions.join(", ")}`);
+        }
+        if (res.customInput !== undefined && res.customInput !== "") {
+          responseParts.push(`${res.id} (custom): ${res.customInput}`);
+        }
+      }
+
+      const text =
+        responseParts.length > 0 ? `User answers:\n${responseParts.join("\n")}` : "User answered the questions.";
+
+      pending.resolve({
+        content: text,
+        isError: false,
+        details: { results: formattedResults },
+      });
+    }
+  }
+
+  private async executeAskTool(toolCall: ToolCall): Promise<{ content: string; isError: boolean; details?: any }> {
+    const key = `${this.request.tabId}:${this.request.runId}:${toolCall.id}`;
+
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        AiAgentChatSession.pendingAsks.delete(key);
+      };
+
+      const onAbort = () => {
+        cleanup();
+        reject(new Error("Ask tool was cancelled by the user"));
+      };
+
+      if (this.signal.aborted) {
+        return reject(new Error("Run aborted"));
+      }
+
+      this.signal.addEventListener("abort", onAbort);
+
+      AiAgentChatSession.pendingAsks.set(key, {
+        resolve: (val) => {
+          this.signal.removeEventListener("abort", onAbort);
+          resolve(val);
+        },
+        reject: (err) => {
+          this.signal.removeEventListener("abort", onAbort);
+          reject(err);
+        },
+        signal: this.signal,
+      });
+    });
+  }
+
   private readonly clusterId: ClusterId | undefined;
   private readonly request: AiAgentSendRequest;
   private readonly executeKubectlTool: ExecuteAiAgentKubectlTool;
   private readonly emit: (event: AiAgentStreamEvent) => void;
   private readonly signal: AbortSignal;
+  private readonly permissionMode: AiAgentPermissionMode;
+  private readonly createMcpToolSupport;
   private readonly settings;
   private readonly model;
-  private readonly tools;
   private readonly systemPrompt;
   private readonly historyMetadata;
   private history: AiAgentConversationMessage[];
   private currentAssistantMessageIndex: number | undefined;
   private pendingContinuationPrompt: UserMessage | undefined;
+  private tools;
+  private mcpToolSupport: AiAgentMcpToolSupport | undefined;
 
-  constructor({ request, rawSettings, clusterId, executeKubectlTool, emit, signal }: AiAgentChatSessionOptions) {
-    const { context, model, settings, tools } = createAiAgentChatContext(request, rawSettings, clusterId);
+  constructor({
+    request,
+    rawSettings,
+    clusterId,
+    executeKubectlTool,
+    emit,
+    signal,
+    createMcpToolSupport,
+  }: AiAgentChatSessionOptions) {
+    const settings = normalizeAiAgentSettings(rawSettings);
+    const permissionMode = request.permissionMode ?? "read-only";
+    const model = createAiAgentChatModel(settings);
 
     this.request = request;
     this.clusterId = clusterId;
     this.executeKubectlTool = executeKubectlTool;
     this.emit = emit;
     this.signal = signal;
+    this.permissionMode = permissionMode;
+    this.createMcpToolSupport = createMcpToolSupport;
     this.settings = settings;
     this.model = model;
-    this.tools = tools;
-    this.systemPrompt = context.systemPrompt;
+    this.tools = getAiAgentKubectlTools(settings, permissionMode);
+    this.systemPrompt = createAiAgentSystemPrompt(clusterId, permissionMode);
     this.historyMetadata = {
       api: model.api,
       provider: model.provider,
@@ -128,71 +217,77 @@ export class AiAgentChatSession {
   }
 
   async run(): Promise<void> {
-    if (this.signal.aborted) {
-      return;
-    }
+    try {
+      await this.initializeTools();
 
-    this.emit({ type: "run-start", tabId: this.request.tabId, runId: this.request.runId });
-
-    for (let iteration = 0; iteration <= this.settings.maxToolIterations; iteration += 1) {
       if (this.signal.aborted) {
         return;
       }
 
-      const wasAbortedDuringCompaction = await this.maybeCompactHistory();
+      this.emit({ type: "run-start", tabId: this.request.tabId, runId: this.request.runId });
 
-      if (wasAbortedDuringCompaction) {
-        return;
+      for (let iteration = 0; iteration <= this.settings.maxToolIterations; iteration += 1) {
+        if (this.signal.aborted) {
+          return;
+        }
+
+        const wasAbortedDuringCompaction = await this.maybeCompactHistory();
+
+        if (wasAbortedDuringCompaction) {
+          return;
+        }
+
+        const { didEmitError, finalMessage } = await this.streamAssistantMessage();
+
+        this.pendingContinuationPrompt = undefined;
+
+        if (this.signal.aborted || didEmitError) {
+          return;
+        }
+
+        if (!finalMessage) {
+          this.emitRunError("AI stream ended without a final message");
+
+          return;
+        }
+
+        this.appendAssistantMessageToHistory(finalMessage);
+
+        const toolCalls = finalMessage.content.filter((block): block is ToolCall => block.type === "toolCall");
+
+        if (toolCalls.length === 0) {
+          this.emitRunDone();
+
+          return;
+        }
+
+        if (!this.tools || iteration >= this.settings.maxToolIterations) {
+          await this.appendToolResultErrors(
+            toolCalls,
+            !this.settings.enableKubectlTools && !this.settings.enableMcpTools
+              ? "Tool execution is disabled in AI Agent preferences."
+              : "Maximum tool iterations reached.",
+          );
+          this.emitRunDone();
+
+          return;
+        }
+
+        const wasAborted = await this.executeToolCalls(toolCalls);
+
+        if (wasAborted) {
+          return;
+        }
+
+        if (getTextFromAssistantMessage(finalMessage).trim()) {
+          this.pendingContinuationPrompt = toPendingUserMessage(continueAfterToolResultsPrompt);
+        }
       }
 
-      const { didEmitError, finalMessage } = await this.streamAssistantMessage();
-
-      this.pendingContinuationPrompt = undefined;
-
-      if (this.signal.aborted || didEmitError) {
-        return;
-      }
-
-      if (!finalMessage) {
-        this.emitRunError("AI stream ended without a final message");
-
-        return;
-      }
-
-      this.appendAssistantMessageToHistory(finalMessage);
-
-      const toolCalls = finalMessage.content.filter((block): block is ToolCall => block.type === "toolCall");
-
-      if (toolCalls.length === 0) {
-        this.emitRunDone();
-
-        return;
-      }
-
-      if (!this.tools || iteration >= this.settings.maxToolIterations) {
-        await this.appendToolResultErrors(
-          toolCalls,
-          !this.settings.enableKubectlTools
-            ? "Tool execution is disabled in AI Agent preferences."
-            : "Maximum tool iterations reached.",
-        );
-        this.emitRunDone();
-
-        return;
-      }
-
-      const wasAborted = await this.executeToolCalls(toolCalls);
-
-      if (wasAborted) {
-        return;
-      }
-
-      if (getTextFromAssistantMessage(finalMessage).trim()) {
-        this.pendingContinuationPrompt = toPendingUserMessage(continueAfterToolResultsPrompt);
-      }
+      this.emitRunDone();
+    } finally {
+      await this.closeMcpToolSupport();
     }
-
-    this.emitRunDone();
   }
 
   private buildContext(): Context {
@@ -207,6 +302,23 @@ export class AiAgentChatSession {
       messages,
       tools: this.tools,
     };
+  }
+
+  private async initializeTools() {
+    if (!this.createMcpToolSupport || !this.settings.enableMcpTools) {
+      return;
+    }
+
+    this.mcpToolSupport = await this.createMcpToolSupport(this.settings, this.permissionMode, this.signal);
+
+    const tools = [...(this.tools ?? []), ...(this.mcpToolSupport?.tools ?? [])];
+
+    this.tools = tools.length > 0 ? tools : undefined;
+  }
+
+  private async closeMcpToolSupport() {
+    await this.mcpToolSupport?.close();
+    this.mcpToolSupport = undefined;
   }
 
   private async maybeCompactHistory() {
@@ -395,12 +507,22 @@ export class AiAgentChatSession {
       let details;
 
       try {
-        validateToolCall(this.tools ?? [], toolCall);
-        const result = await this.executeKubectlTool(this.clusterId, toolCall, this.signal);
+        if (toolCall.name === "ask") {
+          const result = await this.executeAskTool(toolCall);
+          resultContent = result.content;
+          isError = result.isError;
+          details = result.details;
+        } else {
+          validateToolCall(this.tools ?? [], toolCall);
+          const result = this.mcpToolSupport?.hasTool(toolCall.name)
+            ? await this.mcpToolSupport.execute(toolCall, this.signal)
+            : await this.executeKubectlTool(this.clusterId, toolCall, this.signal);
 
-        resultContent = result.content;
-        isError = result.isError;
-        details = result.details;
+          resultContent =
+            typeof result.content === "string" ? result.content : result.content ? JSON.stringify(result.content) : "";
+          isError = result.isError;
+          details = result.details;
+        }
       } catch (error) {
         resultContent = error instanceof Error ? error.message : String(error);
         isError = true;

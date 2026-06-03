@@ -14,6 +14,7 @@ import React, { useRef } from "react";
 import { getMetricLastPoints } from "../../../common/k8s-api/endpoints/metrics.api";
 import requestAllNodeMetricsInjectable from "../../../common/k8s-api/endpoints/metrics.api/request-metrics-for-all-nodes.injectable";
 import activeThemeInjectable from "../../themes/active.injectable";
+import { Badge } from "../badge";
 import { PieChart } from "../chart";
 import {
   canScheduleGpuWorkloadsOnNode,
@@ -21,6 +22,7 @@ import {
   getNodeGpuCapacity,
   isNodeReady,
 } from "../nodes/gpu-capacity";
+import { StatusBrick } from "../status-brick";
 import podStoreInjectable from "../workloads-pods/store.injectable";
 import clusterOverviewMetricsInjectable from "./cluster-metrics.injectable";
 import { ClusterNoMetrics } from "./cluster-no-metrics";
@@ -99,11 +101,11 @@ function computeFreeGpuNodesCount(nodes: Node[], pods: Pod[]): number {
   return freeCount;
 }
 
-function createDerivedMetric(metric: MetricData, value: number): MetricData {
+function createDerivedMetric(metric: MetricData | undefined, value: number): MetricData {
   return {
-    ...metric,
+    status: metric?.status ?? "",
     data: {
-      ...metric.data,
+      resultType: metric?.data?.resultType ?? "matrix",
       result: [
         {
           metric: { component: "derived" },
@@ -315,8 +317,8 @@ const renderCharts = (
     : undefined;
 
   return (
-    <div className="flex wrap justify-center box grow gaps">
-      <div className={cssNames(styles.chart, "flex column align-center box grow")}>
+    <div className={styles.chartsContainer}>
+      <div className={cssNames(styles.chart, "flex column align-center")}>
         <PieChart
           data={cpuData}
           title="CPU"
@@ -324,7 +326,7 @@ const renderCharts = (
         />
         {(cpuLimits ?? cpuAllocatableCapacity) > cpuAllocatableCapacity && renderLimitWarning()}
       </div>
-      <div className={cssNames(styles.chart, "flex column align-center box grow")}>
+      <div className={cssNames(styles.chart, "flex column align-center")}>
         <PieChart
           data={memoryData}
           title="Memory"
@@ -332,13 +334,24 @@ const renderCharts = (
         />
         {(memoryLimits ?? memoryAllocatableCapacity) > memoryAllocatableCapacity && renderLimitWarning()}
       </div>
-      <div className={cssNames(styles.chart, "flex column align-center box grow")}>
+      <div className={cssNames(styles.chart, "flex column align-center")}>
         <PieChart data={podsData} title="Pods" legendColors={["#4caf50", defaultColor]} />
       </div>
       {hasGpu && gpuData && (
-        <div className={cssNames(styles.chart, "flex column align-center box grow")}>
-          <PieChart data={gpuData} title="GPU" legendColors={["#76b900", defaultColor]} />
-          <div className={styles.gpuFreeNodes}>Free nodes: {freeGpuNodesCount}</div>
+        <div className={cssNames(styles.chart, "flex column align-center")}>
+          <PieChart data={gpuData} title="GPU" legendColors={["#76b900", defaultColor]}>
+            <Badge
+              key="gpu-free-nodes"
+              className={cssNames("LegendBadge flex gaps align-center", styles.gpuFreeNodes)}
+              label={
+                <div className="flex items-center">
+                  <StatusBrick style={{ background: "transparent" }} className="shrink-0" />
+                  <span className={styles.gpuFreeNodesText}>Free nodes: {freeGpuNodesCount}</span>
+                </div>
+              }
+              expandable={false}
+            />
+          </PieChart>
           {(gpuRequests ?? 0) > gpuAllocatable && renderLimitWarning()}
         </div>
       )}
@@ -383,7 +396,7 @@ const renderContent = (
   return renderCharts(defaultColor, lastPoints, freeGpuNodesCount);
 };
 
-const NonInjectedClusterPieCharts = observer(
+export const NonInjectedClusterPieCharts = observer(
   ({
     requestAllNodeMetrics,
     selectedNodeRoleForMetrics,

@@ -7,6 +7,7 @@
 import { getInjectable } from "@ogre-tools/injectable";
 import { TabKind } from "../dock/store";
 import dockStoreInjectable from "../dock/store.injectable";
+import aiAgentTabStoreInjectable from "./store.injectable";
 
 import type { DockTabCreateSpecific } from "../dock/store";
 
@@ -15,13 +16,19 @@ const createAiAgentTabInjectable = getInjectable({
 
   instantiate: (di) => {
     const dockStore = di.inject(dockStoreInjectable);
+    const aiAgentTabStore = di.inject(aiAgentTabStoreInjectable);
 
-    return (tabParams: DockTabCreateSpecific = {}) =>
-      dockStore.createTab({
+    return (tabParams: DockTabCreateSpecific = {}) => {
+      const tab = dockStore.createTab({
         title: "AI Agent",
         ...tabParams,
         kind: TabKind.AI_AGENT,
       });
+
+      aiAgentTabStore.createTabState(tab.id);
+
+      return tab;
+    };
   },
 });
 

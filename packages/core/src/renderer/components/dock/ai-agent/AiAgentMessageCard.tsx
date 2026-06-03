@@ -13,6 +13,7 @@ import type { AiAgentMessageCardViewModel } from "./view-model";
 
 interface AiAgentMessageCardProps {
   message: AiAgentMessageCardViewModel;
+  tabId: string;
   onContinue: (toolName: string) => void;
   onCopyPath: (path: string) => void;
   onCopySummary: (summary: string) => void;
@@ -28,6 +29,7 @@ const formatTimestamp = (value: number) =>
 
 export const AiAgentMessageCard = ({
   message,
+  tabId,
   onContinue,
   onCopyPath,
   onCopySummary,
@@ -73,6 +75,7 @@ export const AiAgentMessageCard = ({
               <div key={block.id} className="message-execution">
                 <AiAgentToolExecutionCard
                   block={block}
+                  tabId={tabId}
                   onContinue={onContinue}
                   onCopyPath={onCopyPath}
                   onOpenFullOutput={onOpenFullOutput}

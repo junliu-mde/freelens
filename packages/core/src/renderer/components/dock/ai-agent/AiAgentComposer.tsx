@@ -16,8 +16,10 @@ interface AiAgentComposerProps {
   contextIndicator: AiAgentContextIndicatorViewModel;
   inputDraft: string;
   onChange: (value: string) => void;
+  onCompositionEnd?: (value: string) => void;
+  onCompositionStart?: () => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-  onRequestFocus: () => void;
+  onRequestFocus: (cursor?: "end" | "preserve") => void;
   onSend: () => void;
   onStop: () => void;
   onTogglePermissionMode: () => void;
@@ -31,6 +33,8 @@ export const AiAgentComposer = ({
   contextIndicator,
   inputDraft,
   onChange,
+  onCompositionEnd,
+  onCompositionStart,
   onKeyDown,
   onRequestFocus,
   onSend,
@@ -47,6 +51,37 @@ export const AiAgentComposer = ({
   const minTextareaHeight = 20;
   const shouldFocusComposer = (target: EventTarget | null) =>
     target instanceof HTMLElement && !target.closest("button, textarea");
+  const focusTextareaTarget = (textarea: HTMLTextAreaElement) => {
+    window.focus();
+
+    if (document.activeElement !== textarea) {
+      textarea.focus();
+    }
+
+    const end = textarea.value.length;
+
+    textarea.setSelectionRange(end, end);
+  };
+  const updateDraftWithSelection = (
+    textarea: HTMLTextAreaElement,
+    nextText: string,
+    selectionStart: number,
+    selectionEnd = selectionStart,
+  ) => {
+    onChange(nextText);
+    window.requestAnimationFrame(() => {
+      focusTextareaTarget(textarea);
+      textarea.setSelectionRange(selectionStart, selectionEnd);
+    });
+  };
+  const replaceSelection = (textarea: HTMLTextAreaElement, replacement: string) => {
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? start;
+    const nextText = `${textarea.value.slice(0, start)}${replacement}${textarea.value.slice(end)}`;
+    const nextCursor = start + replacement.length;
+
+    updateDraftWithSelection(textarea, nextText, nextCursor);
+  };
 
   React.useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -64,22 +99,38 @@ export const AiAgentComposer = ({
       <div className="composer-shell">
         <div
           className={`composer-input-shell ${permissionMode}`}
-          onMouseDown={(event) => {
+          onClick={(event) => {
             if (!shouldFocusComposer(event.target)) {
               return;
             }
 
-            event.preventDefault();
             onRequestFocus();
           }}
         >
           <div className="composer-input-row">
             <textarea
+              autoFocus
               ref={textareaRef}
               rows={1}
               value={inputDraft}
               onChange={(event) => onChange(event.currentTarget.value)}
+              onMouseDown={(event) => {
+                if (document.activeElement === event.currentTarget) {
+                  return;
+                }
+
+                window.focus();
+                event.currentTarget.focus();
+              }}
+              onCompositionEnd={(event) => {
+                onCompositionEnd?.(event.currentTarget.value);
+              }}
+              onCompositionStart={onCompositionStart}
               onKeyDown={onKeyDown}
+              onPaste={(event) => {
+                event.preventDefault();
+                replaceSelection(event.currentTarget, event.clipboardData.getData("text"));
+              }}
               placeholder="ask the cluster"
               spellCheck={false}
             />

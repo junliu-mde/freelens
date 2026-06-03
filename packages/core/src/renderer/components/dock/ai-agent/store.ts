@@ -4,6 +4,8 @@
  * Licensed under MIT License. See LICENSE in root directory for more information.
  */
 
+import { action, makeObservable } from "mobx";
+import { type AiAgentPermissionMode, aiAgentAskResponseChannel } from "../../../../features/ai-agent/common/channels";
 import {
   type AiAgentConversationMessage,
   type AiAgentMessage,
@@ -16,7 +18,8 @@ import {
 import { DockTabStore } from "../dock-tab-store/dock-tab.store";
 import { type AiAgentSession, AiAgentSessionsRepository } from "./sessions-repository";
 
-import type { AiAgentPermissionMode } from "../../../../features/ai-agent/common/channels";
+import type { IpcRenderer } from "electron";
+
 import type { AiAgentToolResultDetails } from "../../../../features/ai-agent/common/tool-result-details";
 import type { TabId } from "../dock/store";
 import type { DockTabStoreDependencies } from "../dock-tab-store/dock-tab.store";
@@ -42,7 +45,9 @@ export interface AiAgentTabData {
   sessionSearch: string;
 }
 
-export interface AiAgentTabStoreDependencies extends DockTabStoreDependencies {}
+export interface AiAgentTabStoreDependencies extends DockTabStoreDependencies {
+  ipcRenderer: IpcRenderer;
+}
 
 type MutableAiAgentMessagePart = AiAgentMessagePart;
 
@@ -118,11 +123,22 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
       storageKey: "ai_agent",
     });
     this.sessionsRepository = new AiAgentSessionsRepository(this.dependencies.createStorage);
+    makeObservable(this);
+
+    // Active cleanup of input draft on restart / initialization
+    for (const tabId of Object.keys(this.getAllData())) {
+      const data = this.getData(tabId);
+
+      if (data?.inputDraft) {
+        this.setInputDraft(tabId, "");
+      }
+    }
   }
 
   protected finalizeDataForSave(data: AiAgentTabData): AiAgentTabData {
     return {
       ...data,
+      inputDraft: "",
       status: "idle",
       activeRunId: undefined,
       messages: finalizeAiAgentMessagesForSave(data.messages),
@@ -134,7 +150,33 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     const existingData = this.getData(tabId);
 
     if (existingData) {
+      return normalizeAiAgentTabData(existingData);
+    }
+
+    const sessionId = "temp-session";
+    return createEmptyTabData(sessionId);
+  }
+
+  @action
+  createTabState(tabId: TabId): AiAgentTabData {
+    const existingData = this.getData(tabId);
+
+    if (existingData) {
       const normalizedData = normalizeAiAgentTabData(existingData);
+
+      // Defend against legacy 'temp-session' being leaked and cached in store
+      if (normalizedData.sessionId === "temp-session") {
+        normalizedData.sessionId = crypto.randomUUID();
+        this.setData(tabId, normalizedData);
+        this.saveSession(
+          tabId,
+          normalizedData.sessionId,
+          normalizedData.messages,
+          normalizedData.clusterId,
+          normalizedData.permissionMode,
+        );
+      }
+
       const needsNormalization =
         existingData.status === undefined ||
         existingData.isNearBottom === undefined ||
@@ -157,6 +199,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     return data;
   }
 
+  @action
   setInputDraft(tabId: TabId, inputDraft: string): void {
     this.updateTab(tabId, (data) => ({
       ...data,
@@ -164,6 +207,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     }));
   }
 
+  @action
   setClusterId(tabId: TabId, clusterId: string): void {
     const nextData = this.updateTab(tabId, (data) => ({
       ...data,
@@ -173,6 +217,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     this.saveSession(tabId, nextData.sessionId, nextData.messages, nextData.clusterId, nextData.permissionMode);
   }
 
+  @action
   setPermissionMode(tabId: TabId, permissionMode: AiAgentPermissionMode): void {
     const nextData = this.updateTab(tabId, (data) => ({
       ...data,
@@ -182,12 +227,14 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     this.saveSession(tabId, nextData.sessionId, nextData.messages, nextData.clusterId, nextData.permissionMode);
   }
 
+  @action
   togglePermissionMode(tabId: TabId): void {
     const data = this.initTab(tabId);
 
     this.setPermissionMode(tabId, data.permissionMode === "read-only" ? "read-write" : "read-only");
   }
 
+  @action
   setSessionSearch(tabId: TabId, sessionSearch: string): void {
     this.updateTab(tabId, (data) => ({
       ...data,
@@ -195,6 +242,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     }));
   }
 
+  @action
   setScrollState(tabId: TabId, state: Partial<Pick<AiAgentTabData, "hasUnreadBelow" | "isNearBottom">>): void {
     const nextState = Object.fromEntries(Object.entries(state).filter(([, value]) => value !== undefined)) as Partial<
       Pick<AiAgentTabData, "hasUnreadBelow" | "isNearBottom">
@@ -206,6 +254,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     }));
   }
 
+  @action
   appendUserMessage(tabId: TabId, text: string): AiAgentMessage {
     const message: AiAgentMessage = {
       id: crypto.randomUUID(),
@@ -229,6 +278,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     return message;
   }
 
+  @action
   startAssistantMessage(tabId: TabId, runId: string): AiAgentMessage {
     const message: AiAgentMessage = {
       id: crypto.randomUUID(),
@@ -254,6 +304,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     return message;
   }
 
+  @action
   appendTextDelta(tabId: TabId, runId: string, delta: string): void {
     this.updateAssistantMessage(tabId, runId, "streaming", (message) => {
       const parts = [...message.parts];
@@ -278,6 +329,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     });
   }
 
+  @action
   startThinking(tabId: TabId, runId: string): void {
     this.appendAssistantPart(
       tabId,
@@ -291,6 +343,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     );
   }
 
+  @action
   appendThinkingDelta(tabId: TabId, runId: string, delta: string): void {
     this.updateLastAssistantPart(
       tabId,
@@ -304,6 +357,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     );
   }
 
+  @action
   finishThinking(tabId: TabId, runId: string): void {
     this.updateLastAssistantPart(
       tabId,
@@ -317,6 +371,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     );
   }
 
+  @action
   startToolCall(tabId: TabId, runId: string, toolCallId: string, name = "tool_call"): void {
     this.appendAssistantPart(
       tabId,
@@ -333,6 +388,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     );
   }
 
+  @action
   appendToolCallDelta(tabId: TabId, runId: string, delta: string): void {
     this.updateLastAssistantPart(
       tabId,
@@ -346,6 +402,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     );
   }
 
+  @action
   finishToolCall(tabId: TabId, runId: string, toolCallId: string, name: string, argumentsText: string): void {
     this.updateLastAssistantPart(
       tabId,
@@ -363,6 +420,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     );
   }
 
+  @action
   appendToolResult(
     tabId: TabId,
     runId: string,
@@ -386,6 +444,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     );
   }
 
+  @action
   replaceConversationHistory(tabId: TabId, runId: string, history: AiAgentConversationMessage[]): void {
     const data = this.initTab(tabId);
     const activeAssistantMessage = data.messages.find(
@@ -402,6 +461,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     this.saveSession(tabId, nextData.sessionId, nextData.messages, nextData.clusterId, nextData.permissionMode);
   }
 
+  @action
   finishRun(tabId: TabId, runId: string, status: Exclude<AiAgentRunStatus, "idle" | "streaming">): void {
     const nextData = this.updateTab(tabId, (data) => ({
       ...data,
@@ -420,6 +480,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     this.saveSession(tabId, nextData.sessionId, nextData.messages, nextData.clusterId, nextData.permissionMode);
   }
 
+  @action
   appendError(tabId: TabId, runId: string, message: string): void {
     this.updateTab(tabId, (data) => ({
       ...data,
@@ -440,6 +501,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     }));
   }
 
+  @action
   clear(tabId: TabId): void {
     const data = this.initTab(tabId);
 
@@ -471,6 +533,12 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     this.sessionsRepository.rename(sessionId, title);
   }
 
+  @action
+  submitAskResponse(tabId: TabId, runId: string, toolCallId: string, results: any): void {
+    this.dependencies.ipcRenderer.send(aiAgentAskResponseChannel, tabId, runId, toolCallId, results);
+  }
+
+  @action
   switchToSession(tabId: TabId, sessionId: string): void {
     const data = this.initTab(tabId);
     const session = this.sessionsRepository.get(sessionId);
@@ -487,10 +555,12 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     });
   }
 
+  @action
   newSession(tabId: TabId): void {
     this.clear(tabId);
   }
 
+  @action
   deleteSession(tabId: TabId, sessionId: string): void {
     const data = this.initTab(tabId);
 
@@ -516,7 +586,19 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
   }
 
   private updateTab(tabId: TabId, update: (data: AiAgentTabData) => AiAgentTabData) {
-    const nextData = update(this.initTab(tabId));
+    let currentData = this.getData(tabId);
+    let isNew = false;
+
+    if (!currentData) {
+      currentData = this.initTab(tabId);
+      isNew = true;
+    }
+
+    const nextData = update(currentData);
+
+    if (isNew && nextData.sessionId === "temp-session") {
+      nextData.sessionId = crypto.randomUUID();
+    }
 
     this.setData(tabId, nextData);
 

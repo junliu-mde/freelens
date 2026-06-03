@@ -43,6 +43,7 @@ export interface AiAgentToolExecutionBlock {
   type: "tool";
   id: string;
   toolCallId: string;
+  runId?: string;
   name: string;
   parameterSummary: string;
   argumentsText: string;
@@ -371,6 +372,7 @@ export const buildAiAgentConversationViewModel = (messages: AiAgentMessage[]): A
             type: "tool",
             id: `${message.id}-tool-${part.toolCallId}`,
             toolCallId: part.toolCallId,
+            runId: message.runId,
             name: part.name,
             parameterSummary: summarizeToolParameters(part.argumentsText),
             argumentsText: part.argumentsText,
@@ -392,6 +394,7 @@ export const buildAiAgentConversationViewModel = (messages: AiAgentMessage[]): A
             type: "tool",
             id: `${message.id}-orphan-tool-${part.toolCallId}-${index}`,
             toolCallId: part.toolCallId,
+            runId: message.runId,
             name: "kubectl result",
             parameterSummary: part.details?.command ?? "tool output",
             argumentsText: "",

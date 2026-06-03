@@ -25,6 +25,7 @@ describe("AiAgentTabStore", () => {
   it("keeps the active streaming message after compaction history is replaced", () => {
     const store = new AiAgentTabStore({
       createStorage: createMockStorage(),
+      ipcRenderer: { invoke: jest.fn() } as any,
     });
 
     store.initTab(tabId);
@@ -56,17 +57,19 @@ describe("AiAgentTabStore", () => {
   it("keeps a manual session title after more messages are saved", () => {
     const store = new AiAgentTabStore({
       createStorage: createMockStorage(),
+      ipcRenderer: { invoke: jest.fn() } as any,
     });
 
-    const { sessionId } = store.initTab(tabId);
+    store.initTab(tabId);
 
     store.appendUserMessage(tabId, "Inspect the daemonset");
     store.autoSaveSession(tabId);
-    store.renameSession(sessionId, "Daemonset follow-up");
+    const activeSessionId = store.initTab(tabId).sessionId;
+    store.renameSession(activeSessionId, "Daemonset follow-up");
     store.appendUserMessage(tabId, "Check the logs too");
     store.autoSaveSession(tabId);
 
-    expect(store.getSession(sessionId)).toMatchObject({
+    expect(store.getSession(activeSessionId)).toMatchObject({
       title: "Daemonset follow-up",
       titleSource: "manual",
     });
@@ -75,6 +78,7 @@ describe("AiAgentTabStore", () => {
   it("does not clear unread state when scroll updates omit that field", () => {
     const store = new AiAgentTabStore({
       createStorage: createMockStorage(),
+      ipcRenderer: { invoke: jest.fn() } as any,
     });
 
     store.initTab(tabId);
@@ -90,6 +94,7 @@ describe("AiAgentTabStore", () => {
   it("hydrates legacy tab data with missing UI-only fields", () => {
     const store = new AiAgentTabStore({
       createStorage: createMockStorage(),
+      ipcRenderer: { invoke: jest.fn() } as any,
     });
 
     store.setData(tabId, {

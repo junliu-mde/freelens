@@ -40,6 +40,7 @@ export interface ChartProps {
   title?: string;
   className?: string;
   "data-testid"?: string;
+  children?: React.ReactNode;
 }
 
 export enum ChartKind {
@@ -159,7 +160,7 @@ export class Chart extends React.Component<ChartProps> {
 
   renderLegend() {
     if (!this.props.showLegend) return null;
-    const { data, legendColors } = this.props;
+    const { data, legendColors, children } = this.props;
     const { labels, datasets } = data;
     const labelElem = (
       title: string | undefined,
@@ -190,6 +191,7 @@ export class Chart extends React.Component<ChartProps> {
               return labelElem(label as string, color);
             })
           : datasets?.map(({ borderColor, label, tooltip }) => labelElem(label, borderColor as string, tooltip))}
+        {children}
       </div>
     );
   }
