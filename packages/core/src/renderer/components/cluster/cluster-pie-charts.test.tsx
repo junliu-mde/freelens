@@ -218,7 +218,7 @@ describe("ClusterPieCharts", () => {
 
     render(
       <NonInjectedClusterPieCharts
-        requestAllNodeMetrics={jest.fn().mockResolvedValue(undefined)}
+        allNodeMetrics={{ value: { get: () => undefined } } as any}
         selectedNodeRoleForMetrics={{ nodes: { get: () => [node] } } as any}
         clusterOverviewMetrics={{
           pending: { get: () => false },

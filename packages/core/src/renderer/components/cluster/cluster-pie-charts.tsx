@@ -12,7 +12,6 @@ import { isNumber } from "lodash";
 import { observer } from "mobx-react";
 import React, { useRef } from "react";
 import { getMetricLastPoints } from "../../../common/k8s-api/endpoints/metrics.api";
-import requestAllNodeMetricsInjectable from "../../../common/k8s-api/endpoints/metrics.api/request-metrics-for-all-nodes.injectable";
 import activeThemeInjectable from "../../themes/active.injectable";
 import { Badge } from "../badge";
 import { PieChart } from "../chart";
@@ -24,6 +23,7 @@ import {
 } from "../nodes/gpu-capacity";
 import { StatusBrick } from "../status-brick";
 import podStoreInjectable from "../workloads-pods/store.injectable";
+import allNodeMetricsInjectable from "./all-node-metrics.injectable";
 import clusterOverviewMetricsInjectable from "./cluster-metrics.injectable";
 import { ClusterNoMetrics } from "./cluster-no-metrics";
 import styles from "./cluster-pie-charts.module.scss";
@@ -38,10 +38,7 @@ import type { IComputedValue } from "mobx";
 
 import type { MetricData } from "../../../common/k8s-api/endpoints/metrics.api";
 import type { ClusterMetricData } from "../../../common/k8s-api/endpoints/metrics.api/request-cluster-metrics-by-node-names.injectable";
-import type {
-  NodeMetricData,
-  RequestAllNodeMetrics,
-} from "../../../common/k8s-api/endpoints/metrics.api/request-metrics-for-all-nodes.injectable";
+import type { NodeMetricData } from "../../../common/k8s-api/endpoints/metrics.api/request-metrics-for-all-nodes.injectable";
 import type { LensTheme } from "../../themes/lens-theme";
 import type { PieChartData } from "../chart";
 import type { SelectedMetricsTimeRange } from "./overview/selected-metrics-time-range.injectable";
@@ -151,7 +148,7 @@ function buildGpuSummary(nodes: Node[], pods: Pod[], nodeMetrics: NodeMetricData
 }
 
 interface Dependencies {
-  requestAllNodeMetrics: RequestAllNodeMetrics;
+  allNodeMetrics: IAsyncComputed<NodeMetricData | undefined>;
   selectedNodeRoleForMetrics: SelectedNodeRoleForMetrics;
   clusterOverviewMetrics: IAsyncComputed<Partial<ClusterMetricData> | undefined>;
   activeTheme: IComputedValue<LensTheme>;
@@ -373,7 +370,7 @@ const renderContent = (
 
 export const NonInjectedClusterPieCharts = observer(
   ({
-    requestAllNodeMetrics,
+    allNodeMetrics,
     selectedNodeRoleForMetrics,
     clusterOverviewMetrics,
     activeTheme,
@@ -389,30 +386,7 @@ export const NonInjectedClusterPieCharts = observer(
     }
 
     const nodes = selectedNodeRoleForMetrics.nodes.get();
-    const [nodeMetrics, setNodeMetrics] = React.useState<NodeMetricData>();
-
-    React.useEffect(() => {
-      let disposed = false;
-
-      const refresh = async () => {
-        const metrics = await requestAllNodeMetrics().catch(() => undefined);
-
-        if (!disposed) {
-          setNodeMetrics(metrics);
-        }
-      };
-
-      void refresh();
-
-      const timer = window.setInterval(() => {
-        void refresh();
-      }, 60_000);
-
-      return () => {
-        disposed = true;
-        window.clearInterval(timer);
-      };
-    }, [requestAllNodeMetrics]);
+    const nodeMetrics = allNodeMetrics.value.get();
 
     const gpuSummary = buildGpuSummary(nodes, podStore.items, nodeMetrics);
     const freeGpuNodesCount = gpuSummary.totalCapacity
@@ -444,8 +418,8 @@ export const NonInjectedClusterPieCharts = observer(
 export const ClusterPieCharts = withInjectables<Dependencies>(NonInjectedClusterPieCharts, {
   getProps: (di) => ({
     activeTheme: di.inject(activeThemeInjectable),
+    allNodeMetrics: di.inject(allNodeMetricsInjectable),
     clusterOverviewMetrics: di.inject(clusterOverviewMetricsInjectable),
-    requestAllNodeMetrics: di.inject(requestAllNodeMetricsInjectable),
     selectedNodeRoleForMetrics: di.inject(selectedNodeRoleForMetricsInjectable),
     selectedMetricsTimeRange: di.inject(selectedMetricsTimeRangeInjectable),
     podStore: di.inject(podStoreInjectable),

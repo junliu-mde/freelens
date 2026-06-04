@@ -6,6 +6,7 @@
  * This replaces the webpack-based auto-registration system.
  */
 
+import allNodeMetricsInjectable from "./all-node-metrics.injectable";
 import clusterOverviewMetricsInjectable from "./cluster-metrics.injectable";
 import clusterOverviewRouteComponentInjectable from "./cluster-overview-route-component.injectable";
 import clusterOverviewSidebarItemInjectable from "./cluster-overview-sidebar-item.injectable";
@@ -15,6 +16,11 @@ import clusterStoreInjectable from "./store.injectable";
 import type { DiContainerForInjection } from "@ogre-tools/injectable";
 
 export function registerInjectables(di: DiContainerForInjection): void {
+  try {
+    di.register(allNodeMetricsInjectable);
+  } catch (e) {
+    /* Ignore duplicate registration */
+  }
   try {
     di.register(clusterOverviewMetricsInjectable);
   } catch (e) {

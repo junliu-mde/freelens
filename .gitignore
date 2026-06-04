@@ -24,5 +24,6 @@ icon.iconset/
 .idea/
 .vscode/
 freelens.js
+main.js
 # Local Codex skills can include machine-specific paths.
 skills/
