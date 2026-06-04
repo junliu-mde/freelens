@@ -29,8 +29,16 @@ export type AiAgentStreamEvent =
   | { type: "thinking-delta"; tabId: string; runId: string; delta: string }
   | { type: "thinking-end"; tabId: string; runId: string }
   | { type: "tool-call-start"; tabId: string; runId: string; toolCallId: string; name?: string }
-  | { type: "tool-call-delta"; tabId: string; runId: string; delta: string }
-  | { type: "tool-call-end"; tabId: string; runId: string; toolCallId: string; name: string; argumentsText: string }
+  | { type: "tool-call-delta"; tabId: string; runId: string; index: string; delta: string }
+  | {
+      type: "tool-call-end";
+      tabId: string;
+      runId: string;
+      index: string;
+      toolCallId: string;
+      name: string;
+      argumentsText: string;
+    }
   | { type: "history-compacted"; tabId: string; runId: string; messages: AiAgentConversationMessage[] }
   | {
       type: "tool-result";

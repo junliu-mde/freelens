@@ -98,6 +98,15 @@ export class Deployment extends KubeObject<NamespaceScopedMetadata, DeploymentSt
     return primary?.type ?? "";
   }
 
+  // Free-text search source: include every condition (active types verbatim, inactive ones as
+  // "Not<Type>" to mirror the list cell) so filtering still matches any condition — not only the
+  // single primary one surfaced by getConditionsText/the sort callback.
+  getSearchableConditionsText() {
+    return this.getConditions()
+      .map((condition) => (condition.status === "True" ? condition.type : `Not${condition.type}`))
+      .join(" ");
+  }
+
   getReplicas() {
     return this.spec.replicas || 0;
   }

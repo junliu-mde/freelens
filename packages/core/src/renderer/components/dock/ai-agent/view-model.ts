@@ -143,7 +143,10 @@ const getToolCallStage = (
     return "done";
   }
 
-  if (messageStatus === "aborted") {
+  // A tool call without a result is only genuinely in-flight while its run is still streaming.
+  // For any finished/hydrated message (done/error/aborted) it was interrupted, so it must not
+  // render as an active spinner or an interactive (and now unanswerable) ask form.
+  if (messageStatus !== "streaming") {
     return "aborted";
   }
 

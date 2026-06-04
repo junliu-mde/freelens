@@ -10,6 +10,18 @@ const toPositiveInteger = (value: unknown, fallback: number, minimum = 1) => {
   return Math.max(minimum, Math.floor(numeric));
 };
 
+const toOptionalFiniteNumber = (value: unknown): number | undefined => {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const numeric = Number(value);
+
+  // Drop non-numeric/corrupt values (e.g. a manually-edited config) so we never forward
+  // `temperature: NaN` into the model stream request, which the endpoint would reject.
+  return Number.isFinite(numeric) ? numeric : undefined;
+};
+
 export interface AiAgentSettings {
   provider: string;
   baseUrl: string;
@@ -49,7 +61,7 @@ export const normalizeAiAgentSettings = (settings?: Partial<AiAgentSettings>): A
   ...settings,
   mcpConfigPath: settings?.mcpConfigPath?.trim() ?? defaultAiAgentSettings.mcpConfigPath,
   maxTokens: toPositiveInteger(settings?.maxTokens, defaultAiAgentSettings.maxTokens),
-  temperature: settings?.temperature !== undefined ? Number(settings?.temperature) : undefined,
+  temperature: toOptionalFiniteNumber(settings?.temperature),
   maxToolIterations: toPositiveInteger(settings?.maxToolIterations, defaultAiAgentSettings.maxToolIterations, 0),
   compactionReserveTokens: toPositiveInteger(
     settings?.compactionReserveTokens,

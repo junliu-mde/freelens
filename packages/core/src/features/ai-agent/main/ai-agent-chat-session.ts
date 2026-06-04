@@ -34,7 +34,10 @@ const normalizeToolExecutionPayload = (
   content: string,
   details: AiAgentToolResultDetails | undefined,
 ) => {
-  if (details?.truncation?.truncated) {
+  // Skip the file-backed truncation safety net when the executor already truncated, and for the
+  // "ask" tool whose content is the user's own (UI-bounded) answers — re-running it there would
+  // persist an orphan temp file in os.tmpdir() that nothing ever cleans up.
+  if (toolCall.name === "ask" || details?.truncation?.truncated) {
     return { content, details };
   }
 
@@ -495,6 +498,7 @@ export class AiAgentChatSession {
             type: "tool-call-delta",
             tabId: this.request.tabId,
             runId: this.request.runId,
+            index: String(event.contentIndex),
             delta: event.delta,
           });
           break;
@@ -503,6 +507,7 @@ export class AiAgentChatSession {
             type: "tool-call-end",
             tabId: this.request.tabId,
             runId: this.request.runId,
+            index: String(event.contentIndex),
             toolCallId: event.toolCall.id,
             name: event.toolCall.name,
             argumentsText: JSON.stringify(event.toolCall.arguments, null, 2),
@@ -559,6 +564,14 @@ export class AiAgentChatSession {
       details = payload.details;
 
       this.appendToolResultToHistory(toolCall, resultContent, isError, details);
+
+      // If the run was aborted while the tool was executing, the renderer has already
+      // finished the run. Emitting a late tool-result would flip the tab back to an
+      // active "waiting-for-tool" status that can never be cleared, so stop here.
+      if (this.signal.aborted) {
+        return true;
+      }
+
       this.emit({
         type: "tool-result",
         tabId: this.request.tabId,
@@ -568,10 +581,6 @@ export class AiAgentChatSession {
         isError,
         details,
       });
-
-      if (this.signal.aborted) {
-        return true;
-      }
     }
 
     return false;

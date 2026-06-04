@@ -211,7 +211,7 @@ describe("run-ai-agent-chat", () => {
     streamMock.mockReturnValue(
       (async function* () {
         yield { type: "toolcall_start", contentIndex: 0 };
-        yield { type: "toolcall_end", toolCall };
+        yield { type: "toolcall_end", contentIndex: 0, toolCall };
         yield {
           type: "done",
           message: {
@@ -234,6 +234,8 @@ describe("run-ai-agent-chat", () => {
 
     expect(validateToolCallMock).toHaveBeenCalled();
     expect(executeKubectlTool).toHaveBeenCalledWith("cluster-1", toolCall, controller.signal);
+    // The run is aborted while the tool executes, so no late tool-result is emitted
+    // (a late tool-result would flip the already-aborted tab back to an active status).
     expect(events).toEqual([
       { type: "run-start", tabId: "tab-1", runId: "run-1" },
       { type: "tool-call-start", tabId: "tab-1", runId: "run-1", toolCallId: "0" },
@@ -241,17 +243,10 @@ describe("run-ai-agent-chat", () => {
         type: "tool-call-end",
         tabId: "tab-1",
         runId: "run-1",
+        index: "0",
         toolCallId: "call-1",
         name: "kubectl_apply",
         argumentsText: JSON.stringify(toolCall.arguments, null, 2),
-      },
-      {
-        type: "tool-result",
-        tabId: "tab-1",
-        runId: "run-1",
-        toolCallId: "call-1",
-        content: "AI Agent run was stopped.",
-        isError: true,
       },
     ]);
   });
@@ -366,6 +361,7 @@ describe("run-ai-agent-chat", () => {
         yield { type: "toolcall_start", contentIndex: 0 };
         yield {
           type: "toolcall_end",
+          contentIndex: 0,
           toolCall: askToolCall,
         };
         yield {
@@ -434,6 +430,7 @@ describe("run-ai-agent-chat", () => {
         yield { type: "toolcall_start", contentIndex: 0 };
         yield {
           type: "toolcall_end",
+          contentIndex: 0,
           toolCall: mockToolCall,
         };
         yield {
@@ -488,6 +485,7 @@ describe("run-ai-agent-chat", () => {
           yield { type: "toolcall_start", contentIndex: 0 };
           yield {
             type: "toolcall_end",
+            contentIndex: 0,
             toolCall: toolResultCall,
           };
           yield {

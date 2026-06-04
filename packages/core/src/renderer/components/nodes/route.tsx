@@ -24,7 +24,12 @@ import { TabLayout } from "../layout/tab-layout-2";
 import { LineProgress } from "../line-progress";
 import { WithTooltip } from "../with-tooltip";
 import podStoreInjectable from "../workloads-pods/store.injectable";
-import { GPU_RESOURCE_KEY, getNodeGpuCapacity } from "./gpu-capacity";
+import {
+  computeGpuAllocatedByNode,
+  getNodeGpuAllocatableCapacity,
+  getNodeGpuCapacity,
+  getNodeGpuTotalCapacity,
+} from "./gpu-capacity";
 import nodeStoreInjectable from "./store.injectable";
 
 import type { Node } from "@freelensapp/kube-object";
@@ -236,32 +241,7 @@ class NonInjectedNodesRoute extends React.Component<Dependencies> {
 
   @computed
   private get gpuAllocatedByNode(): Map<string, number> {
-    const result = new Map<string, number>();
-    const pods = this.props.podStore.items;
-
-    for (const pod of pods) {
-      const phase = pod.getStatusPhase();
-
-      if (phase !== "Running") {
-        continue;
-      }
-
-      const nodeName = pod.getNodeName();
-
-      if (!nodeName) {
-        continue;
-      }
-
-      for (const container of pod.getContainers()) {
-        const gpuRequest = container.resources?.requests?.[GPU_RESOURCE_KEY];
-
-        if (gpuRequest) {
-          result.set(nodeName, (result.get(nodeName) ?? 0) + (parseInt(gpuRequest, 10) || 0));
-        }
-      }
-    }
-
-    return result;
+    return computeGpuAllocatedByNode(this.props.podStore.items);
   }
 
   private getNodeGpuAllocated(node: Node): number {
@@ -270,26 +250,35 @@ class NonInjectedNodesRoute extends React.Component<Dependencies> {
 
   renderGpuUsage(node: Node) {
     const allocated = this.getNodeGpuAllocated(node);
-    const capacity =
-      this.getLastMetricValue(node, "gpuAllocatableCapacity") ??
-      this.getLastMetricValue(node, "gpuCapacity") ??
-      getNodeGpuCapacity(node);
+    const allocatableCapacity =
+      this.getLastMetricValue(node, "gpuAllocatableCapacity") ?? getNodeGpuAllocatableCapacity(node);
+    const totalCapacity = this.getLastMetricValue(node, "gpuCapacity") ?? getNodeGpuTotalCapacity(node);
+    const capacity = allocatableCapacity ?? totalCapacity ?? getNodeGpuCapacity(node);
 
     if (capacity === undefined) {
       return <span>{allocated > 0 ? `${allocated}/-` : "-"}</span>;
     }
 
     const isFullyFree = allocated === 0;
-    const hasCapacityWarning = capacity !== 8;
+    // Warn only on a genuine discrepancy: fewer GPUs are allocatable than the node's total capacity,
+    // which signals some GPUs are unhealthy/unavailable (e.g. a degraded device plugin).
+    const unavailable =
+      allocatableCapacity !== undefined && totalCapacity !== undefined && totalCapacity > allocatableCapacity
+        ? totalCapacity - allocatableCapacity
+        : 0;
 
     return (
       <span className="flex gaps align-center">
         <span className={isFullyFree ? "gpu-free" : undefined}>{`${allocated}/${capacity}`}</span>
-        {hasCapacityWarning && (
+        {unavailable > 0 && (
           <GpuCapacityWarningIcon
             tooltip={{
               formatters: { nowrap: true },
-              children: <div>GPU capacity is {capacity}, expected 8</div>,
+              children: (
+                <div>
+                  {unavailable} of {totalCapacity} GPUs unavailable
+                </div>
+              ),
             }}
           />
         )}

@@ -94,7 +94,10 @@ class NonInjectedDeployments extends React.Component<Dependencies> {
             [columnId.age]: (deployment) => -deployment.getCreationTimestamp(),
             [columnId.condition]: (deployment) => deployment.getConditionsText(),
           }}
-          searchFilters={[(deployment) => deployment.getSearchFields(), (deployment) => deployment.getConditionsText()]}
+          searchFilters={[
+            (deployment) => deployment.getSearchFields(),
+            (deployment) => deployment.getSearchableConditionsText(),
+          ]}
           renderHeaderTitle="Deployments"
           defaultHiddenTableColumns={[columnId.replicas]}
           renderTableHeader={[

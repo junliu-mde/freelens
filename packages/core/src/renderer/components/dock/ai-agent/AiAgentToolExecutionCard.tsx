@@ -80,6 +80,13 @@ export const NonInjectedAiAgentToolExecutionCard = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Without a runId the answer can never match the live run's pending-ask key, so it would be
+    // silently dropped. This happens for hydrated/finished messages, which are no longer answerable.
+    if (!block.runId) {
+      return;
+    }
+
     const results = questions.map((q: any) => ({
       id: q.id,
       question: q.question,
@@ -87,7 +94,7 @@ export const NonInjectedAiAgentToolExecutionCard = ({
       customInput: answers[q.id]?.customInput || "",
       multi: !!q.multi,
     }));
-    aiAgentTabStore.submitAskResponse(tabId, block.runId ?? "", block.toolCallId, results);
+    aiAgentTabStore.submitAskResponse(tabId, block.runId, block.toolCallId, results);
   };
 
   // 渲染交互的 Ask 表单

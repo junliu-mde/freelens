@@ -5,7 +5,13 @@
  */
 
 import { Node } from "@freelensapp/kube-object";
-import { canScheduleGpuWorkloadsOnNode, getNodeGpuCapacity, isNodeReady } from "./gpu-capacity";
+import {
+  canScheduleGpuWorkloadsOnNode,
+  getNodeGpuAllocatableCapacity,
+  getNodeGpuCapacity,
+  getNodeGpuTotalCapacity,
+  isNodeReady,
+} from "./gpu-capacity";
 
 const createNode = ({
   allocatableGpu,
@@ -81,5 +87,30 @@ describe("node gpu capacity helpers", () => {
 
     expect(getNodeGpuCapacity(node)).toBe(8);
     expect(canScheduleGpuWorkloadsOnNode(node)).toBe(false);
+  });
+
+  it("preserves an explicit allocatable of 0 instead of falling back to stale capacity", () => {
+    const node = createNode({
+      allocatableGpu: "0",
+      capacityGpu: "8",
+    });
+
+    expect(getNodeGpuAllocatableCapacity(node)).toBe(0);
+    expect(getNodeGpuTotalCapacity(node)).toBe(8);
+    // allocatable is 0, so the node reports 0 (not the stale capacity of 8) and cannot schedule GPUs.
+    expect(getNodeGpuCapacity(node)).toBe(0);
+    expect(canScheduleGpuWorkloadsOnNode(node)).toBe(false);
+  });
+
+  it("exposes allocatable and total capacity separately for divergent values", () => {
+    const node = createNode({
+      allocatableGpu: "6",
+      capacityGpu: "8",
+    });
+
+    expect(getNodeGpuAllocatableCapacity(node)).toBe(6);
+    expect(getNodeGpuTotalCapacity(node)).toBe(8);
+    expect(getNodeGpuCapacity(node)).toBe(6);
+    expect(canScheduleGpuWorkloadsOnNode(node)).toBe(true);
   });
 });

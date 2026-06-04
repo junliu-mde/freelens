@@ -267,9 +267,9 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
     [dockStore, focusComposer, tabId],
   );
 
-  const togglePermissionMode = () => {
+  const togglePermissionMode = React.useCallback(() => {
     aiAgentTabStore.togglePermissionMode(tabId);
-  };
+  }, [aiAgentTabStore, tabId]);
 
   React.useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {

@@ -136,7 +136,12 @@ const NonInjectedAiAgentPreferences = observer(({ listAiAgentModels, state }: De
       <Input
         theme="round-black"
         value={settings.temperature === undefined ? "" : String(settings.temperature)}
-        onChange={(value) => updateSettings({ temperature: value.trim() ? Number(value) : undefined })}
+        validators={InputValidators.isNumber}
+        onChange={(value) => {
+          const numeric = Number(value);
+
+          updateSettings({ temperature: value.trim() && Number.isFinite(numeric) ? numeric : undefined });
+        }}
         placeholder="Provider default"
       />
 

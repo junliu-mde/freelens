@@ -695,6 +695,11 @@ function ColumnOrderMenu({
 
       const oldIndex = columnIds.indexOf(active.id as string);
       const newIndex = columnIds.indexOf(over.id as string);
+
+      // Guard against a stale/unknown drag id: indexOf returning -1 would make splice operate from
+      // the end of the array and silently corrupt the column order (drop/relocate the wrong column).
+      if (oldIndex < 0 || newIndex < 0) return;
+
       const newOrder = [...columnIds];
       const [moved] = newOrder.splice(oldIndex, 1);
 

@@ -123,21 +123,32 @@ export class DockStore implements DockStorageState {
     window.addEventListener("resize", throttle(this.adjustHeight, 250));
 
     // Migrate legacy tab kinds and remove tabs with unknown kinds
+    let tabsChanged = false;
     const validTabs = this.tabs
       .map((tab) => {
         const migratedKind = tabKindMigrations[tab.kind];
 
-        return migratedKind ? { ...tab, kind: migratedKind } : tab;
+        if (migratedKind && migratedKind !== tab.kind) {
+          tabsChanged = true;
+
+          return { ...tab, kind: migratedKind };
+        }
+
+        return tab;
       })
       .filter((tab) => {
         if (!knownTabKinds.has(tab.kind)) {
+          tabsChanged = true;
+
           return false;
         }
 
         return true;
       });
 
-    if (validTabs.length !== this.tabs.length) {
+    // Persist on any change — a pure kind migration that removes no tabs leaves the array length
+    // unchanged, so a length comparison would silently drop the migrated kind.
+    if (tabsChanged) {
       this.tabs = validTabs;
 
       if (!validTabs.length) {

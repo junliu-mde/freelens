@@ -95,18 +95,32 @@ export const prepareAiAgentCompaction = (
   const boundaryStart = previousSummaryIndex + 1;
   let keptStartIndex = boundaryStart;
   let accumulatedTokens = 0;
+  let foundRecentBoundary = false;
 
   for (let index = messages.length - 1; index >= boundaryStart; index -= 1) {
     accumulatedTokens += messages[index].parts.reduce((total, part) => total + estimatePartTokens(part), 0);
 
     if (accumulatedTokens >= settings.compactionKeepRecentTokens) {
       keptStartIndex = index;
+      foundRecentBoundary = true;
       break;
     }
   }
 
   if (keptStartIndex <= boundaryStart) {
-    return undefined;
+    // The recent tail totals fewer than compactionKeepRecentTokens, yet shouldCompactAiAgentContext
+    // already established the overall context exceeds the window (e.g. a very large tool/system
+    // prompt dominates). Rather than silently doing nothing and sending an oversized request, fall
+    // back to keeping just the most recent message so compaction can still make progress — but only
+    // when there is something to summarize. When the loop stopped because a single recent message
+    // already exceeds the budget (foundRecentBoundary), keep it as-is.
+    const lastIndex = messages.length - 1;
+
+    if (!foundRecentBoundary && lastIndex > boundaryStart) {
+      keptStartIndex = lastIndex;
+    } else {
+      return undefined;
+    }
   }
 
   return {

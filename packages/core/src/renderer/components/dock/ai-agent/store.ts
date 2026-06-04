@@ -389,11 +389,11 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
   }
 
   @action
-  appendToolCallDelta(tabId: TabId, runId: string, delta: string): void {
-    this.updateLastAssistantPart(
+  appendToolCallDelta(tabId: TabId, runId: string, index: string, delta: string): void {
+    this.updateAssistantToolCallPart(
       tabId,
       runId,
-      "tool_call",
+      index,
       (part) => ({
         ...part,
         argumentsText: part.argumentsText + delta,
@@ -403,11 +403,18 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
   }
 
   @action
-  finishToolCall(tabId: TabId, runId: string, toolCallId: string, name: string, argumentsText: string): void {
-    this.updateLastAssistantPart(
+  finishToolCall(
+    tabId: TabId,
+    runId: string,
+    index: string,
+    toolCallId: string,
+    name: string,
+    argumentsText: string,
+  ): void {
+    this.updateAssistantToolCallPart(
       tabId,
       runId,
-      "tool_call",
+      index,
       (part) => ({
         ...part,
         toolCallId,
@@ -611,13 +618,23 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
     status: Extract<AiAgentTabStatus, "streaming" | "waiting-for-tool">,
     update: (message: AiAgentMessage) => AiAgentMessage,
   ) {
-    this.updateTab(tabId, (data) => ({
-      ...data,
-      status,
-      messages: data.messages.map((message) =>
-        message.role === "assistant" && message.runId === runId ? update(message) : message,
-      ),
-    }));
+    this.updateTab(tabId, (data) => {
+      // Ignore late or stale stream events whose run is no longer the active one
+      // (e.g. deltas/tool-results arriving after the run was aborted or finished).
+      // Applying them would resurrect a terminal tab back into an active
+      // "streaming"/"waiting-for-tool" status that the user can no longer clear.
+      if (data.activeRunId !== runId) {
+        return data;
+      }
+
+      return {
+        ...data,
+        status,
+        messages: data.messages.map((message) =>
+          message.role === "assistant" && message.runId === runId ? update(message) : message,
+        ),
+      };
+    });
   }
 
   private appendAssistantPart(
@@ -649,6 +666,38 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
       const parts = [...message.parts];
 
       parts[index] = update(parts[index] as Extract<AiAgentMessagePart, { type: TType }>);
+
+      return {
+        ...message,
+        parts,
+      };
+    });
+  }
+
+  // Tool calls can arrive in parallel within a single assistant turn, so deltas/ends must
+  // target the specific tool_call part by its streaming index rather than the most recent
+  // one (which would corrupt sibling parallel tool calls).
+  private updateAssistantToolCallPart(
+    tabId: TabId,
+    runId: string,
+    matchToolCallId: string,
+    update: (
+      part: Extract<AiAgentMessagePart, { type: "tool_call" }>,
+    ) => Extract<AiAgentMessagePart, { type: "tool_call" }>,
+    status: Extract<AiAgentTabStatus, "streaming" | "waiting-for-tool">,
+  ): void {
+    this.updateAssistantMessage(tabId, runId, status, (message) => {
+      const index = message.parts.findLastIndex(
+        (part) => part.type === "tool_call" && part.toolCallId === matchToolCallId,
+      );
+
+      if (index < 0) {
+        return message;
+      }
+
+      const parts = [...message.parts];
+
+      parts[index] = update(parts[index] as Extract<AiAgentMessagePart, { type: "tool_call" }>);
 
       return {
         ...message,

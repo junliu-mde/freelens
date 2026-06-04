@@ -1,14 +1,6 @@
-process.stdout.on("error", (err: any) => {
-  if (err.code === "EPIPE") {
-    // Ignore stdout EPIPE errors to prevent crashes when parent closes pipe
-  }
-});
-
-process.stderr.on("error", (err: any) => {
-  if (err.code === "EPIPE") {
-    // Ignore stderr EPIPE errors
-  }
-});
+// Imported first (and as a side-effect-only module) so the stdout/stderr EPIPE handlers are
+// registered before the feature import graph below initializes. See the module for details.
+import "./suppress-epipe-errors";
 
 import { applicationFeature, startApplicationInjectionToken } from "@freelensapp/application";
 import { applicationFeatureForElectronMain } from "@freelensapp/application-for-electron-main";

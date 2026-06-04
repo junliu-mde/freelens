@@ -15,7 +15,10 @@ const resetTableColumnOrderInjectable = getInjectable({
     const state = di.inject(userPreferencesStateInjectable);
 
     return action((tableId) => {
-      state.tableColumnOrder.delete(tableId);
+      // Guarded like the sibling get/set helpers: tableColumnOrder is undefined until the
+      // user-preferences store hydrates, so a reset triggered before then must be a no-op
+      // rather than throwing "Cannot read properties of undefined (reading 'delete')".
+      state.tableColumnOrder?.delete(tableId);
     });
   },
 });

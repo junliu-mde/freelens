@@ -18,7 +18,7 @@ import { Badge } from "../badge";
 import { PieChart } from "../chart";
 import {
   canScheduleGpuWorkloadsOnNode,
-  GPU_RESOURCE_KEY,
+  computeGpuAllocatedByNode,
   getNodeGpuCapacity,
   isNodeReady,
 } from "../nodes/gpu-capacity";
@@ -53,34 +53,6 @@ function createLabels(rawLabelData: [string, number | undefined][]): string[] {
 }
 
 const checkedBytesToUnits = (value: number | undefined) => (typeof value === "number" ? bytesToUnits(value) : "N/A");
-
-function computeGpuAllocatedByNode(pods: Pod[]): Map<string, number> {
-  const result = new Map<string, number>();
-
-  for (const pod of pods) {
-    const phase = pod.getStatusPhase();
-
-    if (phase !== "Running") {
-      continue;
-    }
-
-    const nodeName = pod.getNodeName();
-
-    if (!nodeName) {
-      continue;
-    }
-
-    for (const container of pod.getContainers()) {
-      const gpuRequest = container.resources?.requests?.[GPU_RESOURCE_KEY];
-
-      if (gpuRequest) {
-        result.set(nodeName, (result.get(nodeName) ?? 0) + (parseInt(gpuRequest, 10) || 0));
-      }
-    }
-  }
-
-  return result;
-}
 
 function computeFreeGpuNodesCount(nodes: Node[], pods: Pod[]): number {
   const gpuAllocatedByNode = computeGpuAllocatedByNode(pods);
@@ -153,7 +125,8 @@ function buildGpuSummary(nodes: Node[], pods: Pod[], nodeMetrics: NodeMetricData
       getLastNodeMetricValue(nodeMetrics, nodeName, "gpuCapacity") ??
       getNodeGpuCapacity(node);
 
-    if (capacity === undefined || !isNodeReady(node)) {
+    // Skip nodes with no positive GPU capacity (a 0-valued metric must not be treated as a GPU node).
+    if (capacity === undefined || capacity <= 0 || !isNodeReady(node)) {
       continue;
     }
 
@@ -163,7 +136,9 @@ function buildGpuSummary(nodes: Node[], pods: Pod[], nodeMetrics: NodeMetricData
     totalCapacity += capacity;
     totalRequests += allocated;
 
-    if (!node.isUnschedulable() && allocated === 0) {
+    // Use the same schedulable-node criterion as the no-metrics fallback (computeFreeGpuNodesCount)
+    // so the "Free nodes" count is consistent regardless of which path produced it.
+    if (canScheduleGpuWorkloadsOnNode(node) && allocated === 0) {
       freeNodes++;
     }
   }
@@ -305,7 +280,7 @@ const renderCharts = (
     ? {
         datasets: [
           {
-            data: [gpuRequests ?? 0, Math.max(0, gpuAllocatable - (gpuRequests ?? 0)) || 1],
+            data: [gpuRequests ?? 0, Math.max(0, gpuAllocatable - (gpuRequests ?? 0))],
             backgroundColor: ["#76b900", defaultColor],
             id: "gpuRequests",
             label: "Requests",

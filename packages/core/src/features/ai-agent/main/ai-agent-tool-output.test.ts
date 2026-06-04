@@ -4,7 +4,11 @@
  */
 
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { createAiAgentToolExecutionPayload, truncateToolOutputTail } from "./ai-agent-tool-output";
+import {
+  AiAgentOutputAccumulator,
+  createAiAgentToolExecutionPayload,
+  truncateToolOutputTail,
+} from "./ai-agent-tool-output";
 
 describe("ai-agent tool output", () => {
   afterEach(() => {
@@ -94,6 +98,25 @@ describe("ai-agent tool output", () => {
     expect(result.outputLines).toBe(1);
     expect(result.outputBytes).toBeLessThanOrEqual(50 * 1024);
     expect(result.content.includes("\ufffd")).toBe(false);
+  });
+
+  it("reports true full-output totals from a snapshot even after the rolling tail is trimmed", () => {
+    const accumulator = new AiAgentOutputAccumulator();
+    const totalLines = 100_000;
+
+    // Many short lines: the rolling tail only retains a trailing window, but the running
+    // line counter must still reflect the real total in the snapshot's truncation details.
+    for (let index = 0; index < totalLines; index += 1) {
+      accumulator.append(Buffer.from(`line-${index}\n`, "utf-8"));
+    }
+
+    accumulator.finish();
+
+    const snapshot = accumulator.snapshot();
+
+    expect(snapshot.truncation.truncated).toBe(true);
+    expect(snapshot.truncation.totalLines).toBe(totalLines);
+    expect(snapshot.truncation.totalLines).toBeGreaterThan(snapshot.truncation.outputLines);
   });
 
   it("truncates from the tail without returning partial utf8 bytes", () => {

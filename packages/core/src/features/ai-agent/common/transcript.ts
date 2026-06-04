@@ -225,6 +225,11 @@ const toAssistantMessages = (
   const llmMessages: Message[] = [];
   const assistantContent: AssistantMessage["content"] = [];
   const toolCallNamesById = getToolCallNamesById(message.parts);
+  const resolvedToolCallIds = new Set(
+    message.parts
+      .filter((part): part is AiAgentToolResultPart => part.type === "tool_result")
+      .map((part) => part.toolCallId),
+  );
 
   for (const part of message.parts) {
     switch (part.type) {
@@ -237,7 +242,10 @@ const toAssistantMessages = (
         // Keep prior visible output and tool history in context, but skip old hidden reasoning.
         break;
       case "tool_call":
-        if (part.done) {
+        // Only forward tool calls that have a matching tool result. An orphan tool call
+        // (e.g. the run was aborted mid-tool) would produce an assistant message carrying
+        // tool_calls with no following tool messages, which OpenAI-compatible endpoints reject.
+        if (part.done && resolvedToolCallIds.has(part.toolCallId)) {
           const toolCall: ToolCall = {
             type: "toolCall",
             id: part.toolCallId,

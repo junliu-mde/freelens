@@ -12,16 +12,31 @@ import type { AiAgentListModelsRequest, AiAgentModelInfo } from "../common/model
 
 const normalizeBaseUrl = (baseUrl: string) => baseUrl.replace(/\/+$/, "");
 
+const listModelsTimeoutMs = 15_000;
+
 const listAiAgentModels = async ({ baseUrl, apiKey }: AiAgentListModelsRequest): Promise<AiAgentModelInfo[]> => {
   if (!baseUrl) {
     return [];
   }
 
-  const response = await fetch(`${normalizeBaseUrl(baseUrl)}/models`, {
-    headers: {
-      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-    },
-  });
+  let response: Response;
+
+  try {
+    // Bound the request so a hung/unreachable endpoint cannot leave the renderer's
+    // "Load /v1/models" button stuck on "Loading..." for the OS TCP timeout.
+    response = await fetch(`${normalizeBaseUrl(baseUrl)}/models`, {
+      headers: {
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      },
+      signal: AbortSignal.timeout(listModelsTimeoutMs),
+    });
+  } catch (error) {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new Error(`Failed to fetch models: request timed out after ${listModelsTimeoutMs / 1000}s`);
+    }
+
+    throw error;
+  }
 
   if (!response.ok) {
     throw new Error(`Failed to fetch models: ${response.status} ${response.statusText}`);

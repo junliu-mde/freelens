@@ -35,10 +35,10 @@ const applyStreamEvent = (store: AiAgentTabStore, event: AiAgentStreamEvent) => 
       store.startToolCall(event.tabId, event.runId, event.toolCallId, event.name);
       break;
     case "tool-call-delta":
-      store.appendToolCallDelta(event.tabId, event.runId, event.delta);
+      store.appendToolCallDelta(event.tabId, event.runId, event.index, event.delta);
       break;
     case "tool-call-end":
-      store.finishToolCall(event.tabId, event.runId, event.toolCallId, event.name, event.argumentsText);
+      store.finishToolCall(event.tabId, event.runId, event.index, event.toolCallId, event.name, event.argumentsText);
       break;
     case "history-compacted":
       store.replaceConversationHistory(event.tabId, event.runId, event.messages);

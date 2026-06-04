@@ -313,7 +313,15 @@ export class AiAgentOutputAccumulator {
   }
 
   snapshot(options: { persistIfTruncated?: boolean } = {}): AiAgentToolOutputSnapshot {
-    const truncation = truncateToolOutputTail(this.getSnapshotText(), this.maxLines, this.maxBytes);
+    const tailTruncation = truncateToolOutputTail(this.getSnapshotText(), this.maxLines, this.maxBytes);
+    // The rolling tail buffer only retains the trailing window of a large stream, so its line/byte
+    // counts under-report the real totals. Re-project them from the accumulator's running counters
+    // (which are never trimmed) so the "[Showing lines X-Y of Z]" notice reports the true total.
+    const truncation: AiAgentToolResultTruncation & { content: string } = {
+      ...tailTruncation,
+      totalLines: Math.max(tailTruncation.totalLines, this.totalLines),
+      totalBytes: Math.max(tailTruncation.totalBytes, this.totalDecodedBytes),
+    };
 
     if (options.persistIfTruncated && truncation.truncated) {
       this.ensureTempFile();
