@@ -28,7 +28,6 @@ export interface AiAgentSettings {
   apiKey: string;
   model: string;
   reasoningEffort: AiAgentReasoningEffort;
-  maxTokens: number;
   temperature?: number;
   enableKubectlTools: boolean;
   enableMcpTools: boolean;
@@ -39,13 +38,15 @@ export interface AiAgentSettings {
   compactionKeepRecentTokens: number;
 }
 
+/** Persisted configs may still carry removed fields; strip them on load. */
+type StoredAiAgentSettings = Partial<AiAgentSettings> & { maxTokens?: number };
+
 export const defaultAiAgentSettings: AiAgentSettings = {
   provider: "custom-openai-compat",
   baseUrl: "",
   apiKey: "",
   model: "",
   reasoningEffort: "medium",
-  maxTokens: 4096,
   temperature: undefined,
   enableKubectlTools: true,
   enableMcpTools: true,
@@ -56,19 +57,22 @@ export const defaultAiAgentSettings: AiAgentSettings = {
   compactionKeepRecentTokens: 20_000,
 };
 
-export const normalizeAiAgentSettings = (settings?: Partial<AiAgentSettings>): AiAgentSettings => ({
-  ...defaultAiAgentSettings,
-  ...settings,
-  mcpConfigPath: settings?.mcpConfigPath?.trim() ?? defaultAiAgentSettings.mcpConfigPath,
-  maxTokens: toPositiveInteger(settings?.maxTokens, defaultAiAgentSettings.maxTokens),
-  temperature: toOptionalFiniteNumber(settings?.temperature),
-  maxToolIterations: toPositiveInteger(settings?.maxToolIterations, defaultAiAgentSettings.maxToolIterations, 0),
-  compactionReserveTokens: toPositiveInteger(
-    settings?.compactionReserveTokens,
-    defaultAiAgentSettings.compactionReserveTokens,
-  ),
-  compactionKeepRecentTokens: toPositiveInteger(
-    settings?.compactionKeepRecentTokens,
-    defaultAiAgentSettings.compactionKeepRecentTokens,
-  ),
-});
+export const normalizeAiAgentSettings = (settings?: StoredAiAgentSettings): AiAgentSettings => {
+  const { maxTokens: _legacyMaxTokens, ...rest } = settings ?? {};
+
+  return {
+    ...defaultAiAgentSettings,
+    ...rest,
+    mcpConfigPath: rest.mcpConfigPath?.trim() ?? defaultAiAgentSettings.mcpConfigPath,
+    temperature: toOptionalFiniteNumber(rest.temperature),
+    maxToolIterations: toPositiveInteger(rest.maxToolIterations, defaultAiAgentSettings.maxToolIterations, 0),
+    compactionReserveTokens: toPositiveInteger(
+      rest.compactionReserveTokens,
+      defaultAiAgentSettings.compactionReserveTokens,
+    ),
+    compactionKeepRecentTokens: toPositiveInteger(
+      rest.compactionKeepRecentTokens,
+      defaultAiAgentSettings.compactionKeepRecentTokens,
+    ),
+  };
+};

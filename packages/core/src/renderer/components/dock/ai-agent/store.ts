@@ -305,6 +305,14 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
   }
 
   @action
+  setRunStatusHint(tabId: TabId, runId: string, status: string): void {
+    this.updateAssistantMessage(tabId, runId, "streaming", (message) => ({
+      ...message,
+      runStatusHint: status,
+    }));
+  }
+
+  @action
   appendTextDelta(tabId: TabId, runId: string, delta: string): void {
     this.updateAssistantMessage(tabId, runId, "streaming", (message) => {
       const parts = [...message.parts];
@@ -324,6 +332,7 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
 
       return {
         ...message,
+        runStatusHint: undefined,
         parts,
       };
     });
@@ -331,16 +340,18 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
 
   @action
   startThinking(tabId: TabId, runId: string): void {
-    this.appendAssistantPart(
-      tabId,
-      runId,
-      {
-        type: "thinking",
-        text: "",
-        done: false,
-      },
-      "streaming",
-    );
+    this.updateAssistantMessage(tabId, runId, "streaming", (message) => ({
+      ...message,
+      runStatusHint: undefined,
+      parts: [
+        ...message.parts,
+        {
+          type: "thinking",
+          text: "",
+          done: false,
+        },
+      ],
+    }));
   }
 
   @action
@@ -373,19 +384,21 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
 
   @action
   startToolCall(tabId: TabId, runId: string, toolCallId: string, name = "tool_call"): void {
-    this.appendAssistantPart(
-      tabId,
-      runId,
-      {
-        type: "tool_call",
-        toolCallId,
-        name,
-        argumentsText: "",
-        done: false,
-        startedAt: Date.now(),
-      },
-      "waiting-for-tool",
-    );
+    this.updateAssistantMessage(tabId, runId, "waiting-for-tool", (message) => ({
+      ...message,
+      runStatusHint: undefined,
+      parts: [
+        ...message.parts,
+        {
+          type: "tool_call",
+          toolCallId,
+          name,
+          argumentsText: "",
+          done: false,
+          startedAt: Date.now(),
+        },
+      ],
+    }));
   }
 
   @action
@@ -462,6 +475,26 @@ export class AiAgentTabStore extends DockTabStore<AiAgentTabData> {
       messages: [...hydrateAiAgentMessages(history), ...(activeAssistantMessage ? [activeAssistantMessage] : [])],
       lastCompactionAt: Date.now(),
       lastCompactionSummaryPreview: getLastCompactionSummaryPreview(history),
+    };
+
+    this.setData(tabId, nextData);
+    this.saveSession(tabId, nextData.sessionId, nextData.messages, nextData.clusterId, nextData.permissionMode);
+  }
+
+  @action
+  rewindToMessage(tabId: TabId, messageId: string): void {
+    const data = this.initTab(tabId);
+    const index = data.messages.findIndex((msg) => msg.id === messageId);
+
+    if (index === -1) {
+      return;
+    }
+
+    const nextData = {
+      ...data,
+      status: "idle" as const,
+      activeRunId: undefined,
+      messages: data.messages.slice(0, index + 1),
     };
 
     this.setData(tabId, nextData);

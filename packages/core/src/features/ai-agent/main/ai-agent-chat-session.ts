@@ -4,10 +4,17 @@
  */
 
 import { stream, validateToolCall } from "@earendil-works/pi-ai";
+import { estimateAiAgentContextTokens, shouldCompactAiAgentContext } from "../common/compaction";
 import { normalizeAiAgentSettings } from "../common/settings";
+import { resolveAiAgentStreamMaxTokens } from "../common/stream-max-tokens";
 import { toAiAgentLlmMessages } from "../common/transcript";
 import { compactAiAgentConversation } from "./ai-agent-chat-compaction";
-import { createAiAgentChatModel, createAiAgentSystemPrompt, getAiAgentKubectlTools } from "./ai-agent-chat-context";
+import {
+  type AiAgentClusterContext,
+  createAiAgentChatModel,
+  createAiAgentSystemPrompt,
+  getAiAgentKubectlTools,
+} from "./ai-agent-chat-context";
 import { createAiAgentToolExecutionPayload } from "./ai-agent-tool-output";
 
 import type { AssistantMessage, Context, ToolCall, UserMessage } from "@earendil-works/pi-ai";
@@ -17,11 +24,41 @@ import type { AiAgentPermissionMode, AiAgentSendRequest, AiAgentStreamEvent } fr
 import type { AiAgentSettings } from "../common/settings";
 import type { AiAgentToolResultDetails } from "../common/tool-result-details";
 import type { AiAgentConversationMessage, AiAgentMessagePart } from "../common/transcript";
-import type { AiAgentMcpToolSupport, CreateAiAgentMcpToolSupport } from "./ai-agent-mcp-tool-support.injectable";
+import type { AiAgentMcpToolPool } from "./ai-agent-mcp-tool-pool.injectable";
+import type { AiAgentMcpToolSupport } from "./ai-agent-mcp-tool-support.injectable";
 import type { ExecuteAiAgentKubectlTool } from "./execute-ai-agent-kubectl-tool.injectable";
 
 const continueAfterToolResultsPrompt =
   "Continue after the tool results. Summarize the evidence and answer the user's debugging request.";
+
+const aiAgentStreamTimeoutMs = 300_000;
+
+const createAiAgentStreamSignal = (parentSignal: AbortSignal, timeoutMs: number) => {
+  if (typeof AbortSignal.timeout === "function" && typeof AbortSignal.any === "function") {
+    return AbortSignal.any([parentSignal, AbortSignal.timeout(timeoutMs)]);
+  }
+
+  const timeoutController = new AbortController();
+  const timeoutHandle = setTimeout(() => {
+    const timeoutError = new Error("AI stream timed out");
+
+    timeoutError.name = "TimeoutError";
+    timeoutController.abort(timeoutError);
+  }, timeoutMs);
+
+  const abortFromParent = () => {
+    clearTimeout(timeoutHandle);
+    timeoutController.abort(parentSignal.reason);
+  };
+
+  if (parentSignal.aborted) {
+    abortFromParent();
+  } else {
+    parentSignal.addEventListener("abort", abortFromParent, { once: true });
+  }
+
+  return timeoutController.signal;
+};
 
 const getTextFromAssistantMessage = (message: AssistantMessage) =>
   message.content
@@ -112,10 +149,11 @@ interface AiAgentChatSessionOptions {
   request: AiAgentSendRequest;
   rawSettings: AiAgentSettings | undefined;
   clusterId: ClusterId | undefined;
+  clusterContext: AiAgentClusterContext | undefined;
   executeKubectlTool: ExecuteAiAgentKubectlTool;
   emit: (event: AiAgentStreamEvent) => void;
   signal: AbortSignal;
-  createMcpToolSupport?: CreateAiAgentMcpToolSupport;
+  mcpToolPool?: AiAgentMcpToolPool;
 }
 
 interface PendingAsk {
@@ -201,7 +239,7 @@ export class AiAgentChatSession {
   private readonly emit: (event: AiAgentStreamEvent) => void;
   private readonly signal: AbortSignal;
   private readonly permissionMode: AiAgentPermissionMode;
-  private readonly createMcpToolSupport;
+  private readonly mcpToolPool;
   private readonly settings;
   private readonly model;
   private readonly systemPrompt;
@@ -216,10 +254,11 @@ export class AiAgentChatSession {
     request,
     rawSettings,
     clusterId,
+    clusterContext,
     executeKubectlTool,
     emit,
     signal,
-    createMcpToolSupport,
+    mcpToolPool,
   }: AiAgentChatSessionOptions) {
     const settings = normalizeAiAgentSettings(rawSettings);
     const permissionMode = request.permissionMode ?? "read-only";
@@ -231,11 +270,11 @@ export class AiAgentChatSession {
     this.emit = emit;
     this.signal = signal;
     this.permissionMode = permissionMode;
-    this.createMcpToolSupport = createMcpToolSupport;
+    this.mcpToolPool = mcpToolPool;
     this.settings = settings;
     this.model = model;
     this.tools = getAiAgentKubectlTools(settings, permissionMode);
-    this.systemPrompt = createAiAgentSystemPrompt(clusterId, permissionMode);
+    this.systemPrompt = createAiAgentSystemPrompt(clusterContext, permissionMode);
     this.historyMetadata = {
       api: model.api,
       provider: model.provider,
@@ -246,6 +285,10 @@ export class AiAgentChatSession {
 
   async run(): Promise<void> {
     try {
+      if (this.settings.enableMcpTools && this.mcpToolPool && !this.mcpToolPool.isReady(this.settings)) {
+        this.emitRunStatus("Loading MCP tools...");
+      }
+
       await this.initializeTools();
 
       if (this.signal.aborted) {
@@ -254,9 +297,25 @@ export class AiAgentChatSession {
 
       this.emit({ type: "run-start", tabId: this.request.tabId, runId: this.request.runId });
 
+      if (this.request.forceCompact) {
+        this.emitRunStatus("Summarizing conversation history...");
+        const wasAbortedDuringCompaction = await this.maybeCompactHistory(true);
+
+        if (wasAbortedDuringCompaction) {
+          return;
+        }
+
+        this.emitRunDone();
+        return;
+      }
+
       for (let iteration = 0; iteration <= this.settings.maxToolIterations; iteration += 1) {
         if (this.signal.aborted) {
           return;
+        }
+
+        if (this.shouldCompactHistory()) {
+          this.emitRunStatus("Summarizing conversation history...");
         }
 
         const wasAbortedDuringCompaction = await this.maybeCompactHistory();
@@ -264,6 +323,8 @@ export class AiAgentChatSession {
         if (wasAbortedDuringCompaction) {
           return;
         }
+
+        this.emitRunStatus("Waiting for model response...");
 
         const { didEmitError, finalMessage } = await this.streamAssistantMessage();
 
@@ -314,7 +375,7 @@ export class AiAgentChatSession {
 
       this.emitRunDone();
     } finally {
-      await this.closeMcpToolSupport();
+      this.mcpToolSupport = undefined;
     }
   }
 
@@ -333,23 +394,31 @@ export class AiAgentChatSession {
   }
 
   private async initializeTools() {
-    if (!this.createMcpToolSupport || !this.settings.enableMcpTools) {
+    if (!this.mcpToolPool || !this.settings.enableMcpTools) {
       return;
     }
 
-    this.mcpToolSupport = await this.createMcpToolSupport(this.settings, this.permissionMode, this.signal);
+    this.mcpToolSupport = await this.mcpToolPool.getForRun(this.settings, this.permissionMode, this.signal);
 
     const tools = [...(this.tools ?? []), ...(this.mcpToolSupport?.tools ?? [])];
 
     this.tools = tools.length > 0 ? tools : undefined;
   }
 
-  private async closeMcpToolSupport() {
-    await this.mcpToolSupport?.close();
-    this.mcpToolSupport = undefined;
+  private shouldCompactHistory() {
+    return shouldCompactAiAgentContext(
+      estimateAiAgentContextTokens(
+        this.history,
+        this.systemPrompt,
+        this.tools,
+        getPendingUserMessageText(this.pendingContinuationPrompt),
+      ),
+      this.model.contextWindow,
+      this.settings,
+    );
   }
 
-  private async maybeCompactHistory() {
+  private async maybeCompactHistory(force = false) {
     try {
       const hadActiveAssistant = this.currentAssistantMessageIndex !== undefined;
       const compactionResult = await compactAiAgentConversation({
@@ -361,6 +430,7 @@ export class AiAgentChatSession {
         systemPrompt: this.systemPrompt,
         tools: this.tools,
         extraText: getPendingUserMessageText(this.pendingContinuationPrompt),
+        force,
       });
 
       if (this.signal.aborted || !compactionResult) {
@@ -460,74 +530,123 @@ export class AiAgentChatSession {
   private async streamAssistantMessage(): Promise<StreamAssistantMessageResult> {
     let finalMessage: AssistantMessage | undefined;
 
-    for await (const event of stream(this.model, this.buildContext(), {
-      apiKey: this.settings.apiKey,
-      signal: this.signal,
-      maxTokens: this.settings.maxTokens,
-      ...(this.settings.temperature === undefined ? {} : { temperature: this.settings.temperature }),
-      ...(this.settings.reasoningEffort === "off" ? {} : { reasoning: this.settings.reasoningEffort }),
-    })) {
-      switch (event.type) {
-        case "text_delta":
-          this.emit({ type: "text-delta", tabId: this.request.tabId, runId: this.request.runId, delta: event.delta });
-          break;
-        case "thinking_start":
-          this.emit({ type: "thinking-start", tabId: this.request.tabId, runId: this.request.runId });
-          break;
-        case "thinking_delta":
-          this.emit({
-            type: "thinking-delta",
-            tabId: this.request.tabId,
-            runId: this.request.runId,
-            delta: event.delta,
-          });
-          break;
-        case "thinking_end":
-          this.emit({ type: "thinking-end", tabId: this.request.tabId, runId: this.request.runId });
-          break;
-        case "toolcall_start":
-          this.emit({
-            type: "tool-call-start",
-            tabId: this.request.tabId,
-            runId: this.request.runId,
-            toolCallId: String(event.contentIndex),
-          });
-          break;
-        case "toolcall_delta":
-          this.emit({
-            type: "tool-call-delta",
-            tabId: this.request.tabId,
-            runId: this.request.runId,
-            index: String(event.contentIndex),
-            delta: event.delta,
-          });
-          break;
-        case "toolcall_end":
-          this.emit({
-            type: "tool-call-end",
-            tabId: this.request.tabId,
-            runId: this.request.runId,
-            index: String(event.contentIndex),
-            toolCallId: event.toolCall.id,
-            name: event.toolCall.name,
-            argumentsText: JSON.stringify(event.toolCall.arguments, null, 2),
-          });
-          break;
-        case "done":
-          finalMessage = event.message;
-          break;
-        case "error":
-          if (this.signal.aborted) {
-            return { didEmitError: false };
-          }
+    const context = this.buildContext();
+    const streamMaxTokens = resolveAiAgentStreamMaxTokens({
+      modelId: this.model.id,
+      catalogMaxTokens: this.model.maxTokens,
+      contextWindow: this.model.contextWindow,
+      estimatedInputTokens: estimateAiAgentContextTokens(
+        this.history,
+        this.systemPrompt,
+        this.tools,
+        getPendingUserMessageText(this.pendingContinuationPrompt),
+      ),
+    });
 
-          this.emitRunError(event.error.errorMessage || "AI stream failed");
+    const streamSignal = createAiAgentStreamSignal(this.signal, aiAgentStreamTimeoutMs);
 
-          return { didEmitError: true };
+    try {
+      for await (const event of stream(this.model, context, {
+        apiKey: this.settings.apiKey,
+        signal: streamSignal,
+        ...(streamMaxTokens === undefined ? {} : { maxTokens: streamMaxTokens }),
+        ...(this.settings.temperature === undefined ? {} : { temperature: this.settings.temperature }),
+        ...(this.settings.reasoningEffort === "off" ? {} : { reasoning: this.settings.reasoningEffort }),
+      })) {
+        switch (event.type) {
+          case "text_delta":
+            this.emit({ type: "text-delta", tabId: this.request.tabId, runId: this.request.runId, delta: event.delta });
+            break;
+          case "thinking_start":
+            this.emit({ type: "thinking-start", tabId: this.request.tabId, runId: this.request.runId });
+            break;
+          case "thinking_delta":
+            this.emit({
+              type: "thinking-delta",
+              tabId: this.request.tabId,
+              runId: this.request.runId,
+              delta: event.delta,
+            });
+            break;
+          case "thinking_end":
+            this.emit({ type: "thinking-end", tabId: this.request.tabId, runId: this.request.runId });
+            break;
+          case "toolcall_start":
+            this.emit({
+              type: "tool-call-start",
+              tabId: this.request.tabId,
+              runId: this.request.runId,
+              toolCallId: String(event.contentIndex),
+            });
+            break;
+          case "toolcall_delta":
+            this.emit({
+              type: "tool-call-delta",
+              tabId: this.request.tabId,
+              runId: this.request.runId,
+              index: String(event.contentIndex),
+              delta: event.delta,
+            });
+            break;
+          case "toolcall_end":
+            this.emit({
+              type: "tool-call-end",
+              tabId: this.request.tabId,
+              runId: this.request.runId,
+              index: String(event.contentIndex),
+              toolCallId: event.toolCall.id,
+              name: event.toolCall.name,
+              argumentsText: JSON.stringify(event.toolCall.arguments, null, 2),
+            });
+            break;
+          case "done":
+            finalMessage = event.message;
+            break;
+          case "error":
+            if (this.signal.aborted) {
+              return { didEmitError: false };
+            }
+
+            this.emitRunError(event.error.errorMessage || "AI stream failed");
+
+            return { didEmitError: true };
+        }
       }
+    } catch (error) {
+      if (this.signal.aborted) {
+        return { didEmitError: false };
+      }
+
+      if (streamSignal.aborted && streamSignal.reason) {
+        const timeoutMessage =
+          streamSignal.reason instanceof Error && streamSignal.reason.name === "TimeoutError"
+            ? `AI stream timed out after ${aiAgentStreamTimeoutMs / 60_000} minutes.`
+            : streamSignal.reason instanceof Error
+              ? streamSignal.reason.message
+              : String(streamSignal.reason);
+
+        this.emitRunError(timeoutMessage);
+
+        return { didEmitError: true };
+      }
+
+      throw error;
     }
 
     return { didEmitError: false, finalMessage };
+  }
+
+  private emitRunStatus(status: string) {
+    if (this.signal.aborted) {
+      return;
+    }
+
+    this.emit({
+      type: "run-status",
+      tabId: this.request.tabId,
+      runId: this.request.runId,
+      status,
+    });
   }
 
   private async executeToolCalls(toolCalls: ToolCall[]) {

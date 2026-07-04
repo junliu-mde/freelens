@@ -803,6 +803,61 @@
     color: var(--ai-text-faint);
   }
 
+  .message-time-and-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .rewind-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid rgba(132, 215, 226, 0.28);
+    border-radius: 4px;
+    color: var(--ai-cyan);
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1;
+    padding: 3px 6px;
+    height: 20px;
+    min-height: auto;
+    cursor: pointer;
+    opacity: 0;
+    transform: scale(0.95);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+
+    &:hover {
+      background: rgba(132, 215, 226, 0.15);
+      border-color: var(--ai-cyan);
+      color: #ffffff;
+    }
+  }
+
+  .AiAgentMessageCard.user {
+    transition:
+      background-color 0.2s,
+      opacity 0.2s;
+
+    &:hover {
+      background: linear-gradient(
+        90deg,
+        rgba(132, 215, 226, 0.08),
+        transparent 36%
+      );
+
+      .rewind-action-btn {
+        opacity: 0.85;
+        transform: scale(1);
+      }
+    }
+
+    .rewind-action-btn:hover {
+      opacity: 1;
+    }
+  }
+
   .message-answer,
   .message-execution {
     display: flex;

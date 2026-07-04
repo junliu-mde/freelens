@@ -26,7 +26,7 @@ import type { AiAgentPermissionMode } from "../common/channels";
 import type { AiAgentSettings } from "../common/settings";
 import type { AiAgentToolExecutionResult } from "./execute-ai-agent-kubectl-tool.injectable";
 
-interface AiAgentMcpLogger extends Pick<Logger, "debug" | "info" | "warn"> {}
+export interface AiAgentMcpLogger extends Pick<Logger, "debug" | "info" | "warn"> {}
 
 interface AiAgentMcpRemoteTool {
   name: string;
@@ -583,19 +583,20 @@ export const createAiAgentMcpToolSupport = async (
   const loadedConfigs = candidatePaths.filter((p) => p);
   deps.logger.info(`[AI-AGENT] loading MCP configurations from: ${loadedConfigs.join(", ")}`);
 
-  for (const [serverName, serverEntry] of mergedServers.entries()) {
+  const initializeServer = async ([serverName, serverEntry]: [string, { config: unknown; configPath: string }]) => {
     const configDirectory = path.dirname(serverEntry.configPath);
     const serverConfig = parseMcpServerConfig(serverEntry.config, configDirectory, deps.resolveTilde, deps);
 
     if (!serverConfig) {
-      continue;
+      return undefined;
     }
 
     const transport = createMcpTransport(serverConfig, deps);
 
     if (!transport) {
       deps.logger.warn(`[AI-AGENT] skipping MCP server "${serverName}" because it has no supported transport config.`);
-      continue;
+
+      return undefined;
     }
 
     const client = deps.createClient?.() ?? createDefaultClient();
@@ -610,34 +611,51 @@ export const createAiAgentMcpToolSupport = async (
         timeout: mcpRequestTimeoutMs,
       });
 
-      connectedClients.add(client);
-
       const response = await client.listTools(undefined, {
         signal,
         timeout: mcpRequestTimeoutMs,
       });
       const remoteTools = response.tools ?? [];
 
-      for (const tool of remoteTools) {
-        const toolName = buildUniqueToolName(serverName, tool.name, seenToolNames);
-
-        tools.push({
-          name: toolName,
-          description: createMcpToolDescription(serverName, tool),
-          parameters: tool.inputSchema,
-        });
-        bindings.set(toolName, {
-          client,
-          serverName,
-          remoteToolName: tool.name,
-        });
-      }
-
       deps.logger.info(`[AI-AGENT] initialized MCP server "${serverName}" with ${remoteTools.length} tool(s)`);
+
+      return {
+        client,
+        remoteTools: remoteTools.map((tool) => ({
+          serverName,
+          tool,
+        })),
+      };
     } catch (error) {
-      connectedClients.delete(client);
       await client.close().catch(() => undefined);
       deps.logger.warn(`[AI-AGENT] failed to initialize MCP server "${serverName}": ${toErrorMessage(error)}`);
+
+      return undefined;
+    }
+  };
+
+  const initializedServers = await Promise.all([...mergedServers.entries()].map(initializeServer));
+
+  for (const initializedServer of initializedServers) {
+    if (!initializedServer) {
+      continue;
+    }
+
+    connectedClients.add(initializedServer.client);
+
+    for (const { serverName, tool } of initializedServer.remoteTools) {
+      const toolName = buildUniqueToolName(serverName, tool.name, seenToolNames);
+
+      tools.push({
+        name: toolName,
+        description: createMcpToolDescription(serverName, tool),
+        parameters: tool.inputSchema,
+      });
+      bindings.set(toolName, {
+        client: initializedServer.client,
+        serverName,
+        remoteToolName: tool.name,
+      });
     }
   }
 

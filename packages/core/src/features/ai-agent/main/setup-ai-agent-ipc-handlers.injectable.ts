@@ -8,6 +8,7 @@ import { onLoadOfApplicationInjectionToken } from "@freelensapp/application";
 import { loggerInjectionToken } from "@freelensapp/logger";
 import { getInjectable } from "@ogre-tools/injectable";
 import { ipcMainHandle, ipcMainOn } from "../../../common/ipc";
+import getClusterByIdInjectable from "../../cluster/storage/common/get-by-id.injectable";
 import userPreferencesStateInjectable from "../../user-preferences/common/state.injectable";
 import {
   aiAgentAbortChannel,
@@ -18,16 +19,17 @@ import {
 import { aiAgentClusterIdHeader } from "../common/headers";
 import { AiAgentChatRunRegistry } from "./ai-agent-chat-run-registry";
 import { AiAgentChatSession } from "./ai-agent-chat-session";
-import createAiAgentMcpToolSupportInjectable from "./ai-agent-mcp-tool-support.injectable";
+import aiAgentMcpToolPoolInjectable from "./ai-agent-mcp-tool-pool.injectable";
 import executeAiAgentKubectlToolInjectable from "./execute-ai-agent-kubectl-tool.injectable";
 import { runAiAgentChat } from "./run-ai-agent-chat";
 
 import type { Logger } from "@freelensapp/logger";
 
 import type { ClusterId } from "../../../common/cluster-types";
+import type { GetClusterById } from "../../cluster/storage/common/get-by-id.injectable";
 import type { UserPreferencesState } from "../../user-preferences/common/state.injectable";
 import type { AiAgentSendRequest, AiAgentStreamEvent } from "../common/channels";
-import type { CreateAiAgentMcpToolSupport } from "./ai-agent-mcp-tool-support.injectable";
+import type { AiAgentMcpToolPool } from "./ai-agent-mcp-tool-pool.injectable";
 import type { ExecuteAiAgentKubectlTool } from "./execute-ai-agent-kubectl-tool.injectable";
 
 const sendToInvokingFrame = (
@@ -58,9 +60,12 @@ const setupAiAgentIpcHandlers = (
   logger: Logger,
   userPreferencesState: UserPreferencesState,
   executeKubectlTool: ExecuteAiAgentKubectlTool,
-  createMcpToolSupport: CreateAiAgentMcpToolSupport,
+  mcpToolPool: AiAgentMcpToolPool,
+  getClusterById: GetClusterById,
 ) => {
   const runRegistry = new AiAgentChatRunRegistry();
+
+  mcpToolPool.preload();
 
   ipcMainHandle(aiAgentSendChannel, async (event, request: AiAgentSendRequest) => {
     const controller = runRegistry.create(request.tabId, request.runId);
@@ -77,7 +82,8 @@ const setupAiAgentIpcHandlers = (
         executeKubectlTool,
         emit,
         controller.signal,
-        createMcpToolSupport,
+        mcpToolPool,
+        getClusterById,
       );
     } catch (error) {
       if (controller.signal.aborted) {
@@ -115,7 +121,8 @@ const setupAiAgentIpcHandlersInjectable = getInjectable({
         di.inject(loggerInjectionToken),
         di.inject(userPreferencesStateInjectable),
         di.inject(executeAiAgentKubectlToolInjectable),
-        di.inject(createAiAgentMcpToolSupportInjectable),
+        di.inject(aiAgentMcpToolPoolInjectable),
+        di.inject(getClusterByIdInjectable),
       ),
   }),
 

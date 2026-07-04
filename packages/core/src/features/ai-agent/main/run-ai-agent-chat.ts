@@ -4,12 +4,14 @@
  * Licensed under MIT License. See LICENSE in root directory for more information.
  */
 
+import { resolveAiAgentClusterContext } from "./ai-agent-chat-context";
 import { AiAgentChatSession } from "./ai-agent-chat-session";
 
 import type { ClusterId } from "../../../common/cluster-types";
+import type { GetClusterById } from "../../cluster/storage/common/get-by-id.injectable";
 import type { AiAgentSendRequest, AiAgentStreamEvent } from "../common/channels";
 import type { AiAgentSettings } from "../common/settings";
-import type { CreateAiAgentMcpToolSupport } from "./ai-agent-mcp-tool-support.injectable";
+import type { AiAgentMcpToolPool } from "./ai-agent-mcp-tool-pool.injectable";
 import type { ExecuteAiAgentKubectlTool } from "./execute-ai-agent-kubectl-tool.injectable";
 
 export const runAiAgentChat = async (
@@ -19,14 +21,16 @@ export const runAiAgentChat = async (
   executeKubectlTool: ExecuteAiAgentKubectlTool,
   emit: (event: AiAgentStreamEvent) => void,
   signal: AbortSignal,
-  createMcpToolSupport?: CreateAiAgentMcpToolSupport,
+  mcpToolPool?: AiAgentMcpToolPool,
+  getClusterById?: GetClusterById,
 ): Promise<void> =>
   new AiAgentChatSession({
     request,
     rawSettings,
     clusterId,
+    clusterContext: resolveAiAgentClusterContext(clusterId, getClusterById),
     executeKubectlTool,
     emit,
     signal,
-    createMcpToolSupport,
+    mcpToolPool,
   }).run();

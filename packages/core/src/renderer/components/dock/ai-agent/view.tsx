@@ -309,6 +309,69 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
       return;
     }
 
+    if (text.startsWith("/")) {
+      const parts = text.split(/\s+/);
+      const command = parts[0].toLowerCase();
+
+      if (command === "/rewind") {
+        const userMessages = data.messages.filter((msg) => msg.role === "user");
+
+        if (userMessages.length > 0) {
+          const lastUserMsg = userMessages[userMessages.length - 1];
+
+          aiAgentTabStore.rewindToMessage(tabId, lastUserMsg.id);
+          showSuccessNotification("Conversation rewound to last user message.");
+          aiAgentTabStore.setInputDraft(tabId, "");
+        } else {
+          showErrorNotification("No user messages to rewind to.");
+        }
+
+        return;
+      }
+
+      if (command === "/compact") {
+        if (data.messages.length <= 1) {
+          showErrorNotification("Not enough conversation history to compact.");
+          return;
+        }
+
+        const runId = crypto.randomUUID();
+        const hostedClusterId = hostedCluster?.id;
+
+        if (!data.clusterId && hostedClusterId) {
+          aiAgentTabStore.setClusterId(tabId, hostedClusterId);
+        }
+
+        aiAgentTabStore.setInputDraft(tabId, "");
+        aiAgentTabStore.startAssistantMessage(tabId, runId);
+        aiAgentTabStore.setRunStatusHint(tabId, runId, "Summarizing conversation history...");
+        aiAgentTabStore.autoSaveSession(tabId);
+
+        sendAiAgentMessage({
+          tabId,
+          runId,
+          messages: aiAgentTabStore.getConversationMessages(tabId),
+          permissionMode: data.permissionMode,
+          forceCompact: true,
+        }).catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+
+          aiAgentTabStore.appendError(tabId, runId, message);
+          aiAgentTabStore.finishRun(tabId, runId, "error");
+        });
+
+        return;
+      }
+
+      if (command === "/clear") {
+        aiAgentTabStore.clear(tabId);
+        showSuccessNotification("Conversation cleared.");
+        aiAgentTabStore.setInputDraft(tabId, "");
+
+        return;
+      }
+    }
+
     const runId = crypto.randomUUID();
     const hostedClusterId = hostedCluster?.id;
 
@@ -318,6 +381,7 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
 
     aiAgentTabStore.appendUserMessage(tabId, text);
     aiAgentTabStore.startAssistantMessage(tabId, runId);
+    aiAgentTabStore.setRunStatusHint(tabId, runId, "Starting agent run...");
     aiAgentTabStore.autoSaveSession(tabId);
 
     sendAiAgentMessage({
@@ -384,6 +448,14 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
     showSuccessNotification("Compaction summary copied to clipboard.");
   };
 
+  const handleRewind = React.useCallback(
+    (messageId: string) => {
+      aiAgentTabStore.rewindToMessage(tabId, messageId);
+      showSuccessNotification("Conversation rewound to this message.");
+    },
+    [aiAgentTabStore, tabId, showSuccessNotification],
+  );
+
   return (
     <div
       className="AiAgent"
@@ -433,6 +505,7 @@ export const NonInjectedAiAgentView = observer((props: AiAgentViewProps & Depend
         onCopySummary={copySummary}
         onOpenFullOutput={openFullOutput}
         onRetry={handleRetry}
+        onRewind={handleRewind}
         onScrollStateChange={(state) => aiAgentTabStore.setScrollState(tabId, state)}
       />
 

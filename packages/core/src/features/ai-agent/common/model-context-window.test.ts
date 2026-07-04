@@ -19,4 +19,8 @@ describe("getAiAgentContextWindow", () => {
     expect(getAiAgentContextWindow("gpt-5")).toBe(200_000);
     expect(getAiAgentContextWindow("qwen3-coder")).toBe(262_144);
   });
+
+  it("uses the GLM catalog context window", () => {
+    expect(getAiAgentContextWindow("GLM-5.1-Coding")).toBe(202_752);
+  });
 });

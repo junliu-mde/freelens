@@ -23,6 +23,7 @@ interface AiAgentConversationProps {
   onOpenFullOutput: (path: string) => void;
   onRetry: (toolName: string, command?: string) => void;
   onScrollStateChange: (state: { hasUnreadBelow?: boolean; isNearBottom?: boolean }) => void;
+  onRewind?: (messageId: string) => void;
 }
 
 const nearBottomThreshold = 80;
@@ -41,6 +42,7 @@ export const AiAgentConversation = ({
   onOpenFullOutput,
   onRetry,
   onScrollStateChange,
+  onRewind,
 }: AiAgentConversationProps) => {
   const viewportRef = React.useRef<HTMLDivElement>(null);
   const endRef = React.useRef<HTMLDivElement>(null);
@@ -120,6 +122,7 @@ export const AiAgentConversation = ({
                 onCopySummary={onCopySummary}
                 onOpenFullOutput={onOpenFullOutput}
                 onRetry={onRetry}
+                onRewind={onRewind}
               />
             ))}
           </div>

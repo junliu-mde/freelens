@@ -10,7 +10,8 @@ const knownModelContextWindows: Array<{ pattern: RegExp; tokens: number }> = [
   { pattern: /\b(?:gpt-5|gpt-4\.1|o1|o3|o4)\b/i, tokens: 200_000 },
   { pattern: /\bclaude\b/i, tokens: 200_000 },
   { pattern: /\b(?:qwen|qwq)/i, tokens: 262_144 },
-  { pattern: /\b(?:glm|z\.ai|kimi|moonshot|deepseek|doubao|hunyuan)\b/i, tokens: 256_000 },
+  { pattern: /\b(?:glm|z\.ai)\b/i, tokens: 202_752 },
+  { pattern: /\b(?:kimi|moonshot|deepseek|doubao|hunyuan)\b/i, tokens: 256_000 },
   { pattern: /\bgrok\b/i, tokens: 256_000 },
 ];
 

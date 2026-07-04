@@ -19,6 +19,9 @@ const applyStreamEvent = (store: AiAgentTabStore, event: AiAgentStreamEvent) => 
   switch (event.type) {
     case "run-start":
       break;
+    case "run-status":
+      store.setRunStatusHint(event.tabId, event.runId, event.status);
+      break;
     case "text-delta":
       store.appendTextDelta(event.tabId, event.runId, event.delta);
       break;

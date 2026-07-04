@@ -6,6 +6,7 @@
 
 import { beforeApplicationIsLoadingInjectionToken } from "@freelensapp/application";
 import { getInjectable } from "@ogre-tools/injectable";
+import aiAgentMcpToolPoolInjectable from "../../ai-agent/main/ai-agent-mcp-tool-pool.injectable";
 import { buildVersionInitializationInjectable } from "../../vars/build-version/main/init.injectable";
 import userPreferencesPersistentStorageInjectable from "../common/storage.injectable";
 
@@ -16,6 +17,7 @@ const loadUserPreferencesStorageInjectable = getInjectable({
       const storage = di.inject(userPreferencesPersistentStorageInjectable);
 
       storage.loadAndStartSyncing();
+      di.inject(aiAgentMcpToolPoolInjectable).preload();
     },
     runAfter: buildVersionInitializationInjectable,
   }),

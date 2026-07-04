@@ -64,7 +64,6 @@ describe("run-ai-agent-chat", () => {
     apiKey: "irrelevant",
     model: "some-model",
     reasoningEffort: "off",
-    maxTokens: 512,
     temperature: undefined,
     enableKubectlTools: true,
     enableMcpTools: true,
@@ -236,7 +235,7 @@ describe("run-ai-agent-chat", () => {
     expect(executeKubectlTool).toHaveBeenCalledWith("cluster-1", toolCall, controller.signal);
     // The run is aborted while the tool executes, so no late tool-result is emitted
     // (a late tool-result would flip the already-aborted tab back to an active status).
-    expect(events).toEqual([
+    expect(events.filter((event) => event.type !== "run-status")).toEqual([
       { type: "run-start", tabId: "tab-1", runId: "run-1" },
       { type: "tool-call-start", tabId: "tab-1", runId: "run-1", toolCallId: "0" },
       {
@@ -547,5 +546,40 @@ describe("run-ai-agent-chat", () => {
         text: toolResultEvent?.content,
       },
     ]);
+  });
+
+  it("omits maxTokens from stream options for non-Kimi models", async () => {
+    const executeKubectlTool = jest.fn() as ExecuteAiAgentKubectlTool;
+
+    streamMock.mockReturnValue(
+      (async function* () {
+        yield {
+          type: "done",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "done" }],
+            timestamp: Date.now(),
+          },
+        };
+      })() as never,
+    );
+
+    await runAiAgentChat(
+      request,
+      {
+        ...settings,
+        model: "GLM-5.1-Coding",
+        enableKubectlTools: false,
+        enableMcpTools: false,
+      },
+      undefined,
+      executeKubectlTool,
+      () => undefined,
+      new AbortController().signal,
+    );
+
+    const [, , streamOptions] = streamMock.mock.calls[0];
+
+    expect(streamOptions).not.toHaveProperty("maxTokens");
   });
 });

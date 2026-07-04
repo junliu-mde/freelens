@@ -96,6 +96,7 @@ export interface AiAgentMessageCardViewModel {
   createdAt: number;
   blocks: AiAgentMessageCardBlock[];
   showStreamingPlaceholder: boolean;
+  streamingPlaceholderText: string;
 }
 
 const defaultContextThreshold = minimumAiAgentContextWindow;
@@ -312,6 +313,7 @@ export const buildAiAgentConversationViewModel = (messages: AiAgentMessage[]): A
             ]
           : [],
         showStreamingPlaceholder: false,
+        streamingPlaceholderText: "",
       };
     }
 
@@ -326,6 +328,7 @@ export const buildAiAgentConversationViewModel = (messages: AiAgentMessage[]): A
         createdAt: message.createdAt,
         blocks: text ? [{ type: "text", id: `${message.id}-text`, text }] : [],
         showStreamingPlaceholder: false,
+        streamingPlaceholderText: "",
       };
     }
 
@@ -343,6 +346,8 @@ export const buildAiAgentConversationViewModel = (messages: AiAgentMessage[]): A
     }
 
     let hasText = false;
+    let hasThinking = false;
+    let hasInFlightToolCall = false;
 
     for (let index = 0; index < message.parts.length; index += 1) {
       const part = message.parts[index];
@@ -359,6 +364,7 @@ export const buildAiAgentConversationViewModel = (messages: AiAgentMessage[]): A
           }
           break;
         case "thinking":
+          hasThinking = true;
           blocks.push({
             type: "thinking",
             id: `${message.id}-thinking-${index}`,
@@ -367,6 +373,9 @@ export const buildAiAgentConversationViewModel = (messages: AiAgentMessage[]): A
           });
           break;
         case "tool_call": {
+          if (!part.done) {
+            hasInFlightToolCall = true;
+          }
           const results = resultsByCallId.get(part.toolCallId) ?? [];
           const result = results[results.length - 1];
 
@@ -421,6 +430,10 @@ export const buildAiAgentConversationViewModel = (messages: AiAgentMessage[]): A
       }
     }
 
+    const streamingPlaceholderText =
+      message.runStatusHint?.trim() ||
+      (hasThinking ? "reasoning..." : hasInFlightToolCall ? "preparing tool call..." : "waiting for model output...");
+
     return {
       id: message.id,
       kind: "assistant",
@@ -429,6 +442,7 @@ export const buildAiAgentConversationViewModel = (messages: AiAgentMessage[]): A
       createdAt: message.createdAt,
       blocks,
       showStreamingPlaceholder: !hasText && message.status === "streaming",
+      streamingPlaceholderText,
     };
   });
 

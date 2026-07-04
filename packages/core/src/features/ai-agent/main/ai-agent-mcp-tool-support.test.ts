@@ -31,7 +31,7 @@ describe("ai-agent MCP tool support", () => {
     apiKey: "irrelevant",
     model: "some-model",
     reasoningEffort: "off",
-    maxTokens: 512,
+
     temperature: undefined,
     enableKubectlTools: true,
     enableMcpTools: true,

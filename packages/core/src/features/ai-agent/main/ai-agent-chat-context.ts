@@ -5,14 +5,71 @@
 
 import { getAiAgentContextWindow } from "../common/model-context-window";
 import { normalizeAiAgentSettings } from "../common/settings";
+import { getAiAgentModelCatalogMaxTokens } from "../common/stream-max-tokens";
 import { toAiAgentLlmMessages } from "../common/transcript";
 import { kubectlAiAgentTools, kubectlAiAgentWriteTools } from "./kubectl-tools";
 
 import type { Context, Model, Tool } from "@earendil-works/pi-ai";
 
 import type { ClusterId } from "../../../common/cluster-types";
+import type { GetClusterById } from "../../cluster/storage/common/get-by-id.injectable";
 import type { AiAgentPermissionMode, AiAgentSendRequest } from "../common/channels";
 import type { AiAgentSettings } from "../common/settings";
+
+export interface AiAgentClusterContext {
+  clusterId: ClusterId;
+  displayName: string;
+  contextName: string;
+  distribution?: string;
+  version?: string;
+}
+
+export const resolveAiAgentClusterContext = (
+  clusterId: ClusterId | undefined,
+  getClusterById?: GetClusterById,
+): AiAgentClusterContext | undefined => {
+  if (!clusterId) {
+    return undefined;
+  }
+
+  const cluster = getClusterById?.(clusterId);
+
+  if (!cluster) {
+    return {
+      clusterId,
+      displayName: clusterId,
+      contextName: clusterId,
+    };
+  }
+
+  return {
+    clusterId,
+    displayName: cluster.name.get(),
+    contextName: cluster.contextName.get(),
+    distribution: cluster.distribution.get(),
+    version: cluster.version.get(),
+  };
+};
+
+export const formatAiAgentClusterContext = (cluster: AiAgentClusterContext | undefined) => {
+  if (!cluster) {
+    return "No active cluster connected.";
+  }
+
+  const details = [`display name "${cluster.displayName}"`, `kubeconfig context "${cluster.contextName}"`];
+
+  if (cluster.distribution && cluster.distribution !== "unknown") {
+    details.push(`distribution ${cluster.distribution}`);
+  }
+
+  if (cluster.version && cluster.version !== "unknown") {
+    details.push(`version ${cluster.version}`);
+  }
+
+  details.push(`internal cluster ID ${cluster.clusterId}`);
+
+  return `Active Kubernetes cluster: ${details.join(", ")}.`;
+};
 
 export const createAiAgentChatModel = (settings: AiAgentSettings): Model<"openai-completions"> => ({
   id: settings.model,
@@ -29,7 +86,7 @@ export const createAiAgentChatModel = (settings: AiAgentSettings): Model<"openai
     cacheWrite: 0,
   },
   contextWindow: getAiAgentContextWindow(settings.model),
-  maxTokens: settings.maxTokens,
+  maxTokens: getAiAgentModelCatalogMaxTokens(settings.model),
   compat: {
     supportsUsageInStreaming: false,
     maxTokensField: "max_tokens",
@@ -48,8 +105,11 @@ export const getAiAgentKubectlTools = (
   return permissionMode === "read-write" ? [...kubectlAiAgentTools, ...kubectlAiAgentWriteTools] : kubectlAiAgentTools;
 };
 
-export const createAiAgentSystemPrompt = (clusterId: ClusterId | undefined, permissionMode: AiAgentPermissionMode) => {
-  const clusterContext = clusterId ? `Active cluster ID: ${clusterId}.` : "No active cluster connected.";
+export const createAiAgentSystemPrompt = (
+  cluster: AiAgentClusterContext | undefined,
+  permissionMode: AiAgentPermissionMode,
+) => {
+  const clusterContext = formatAiAgentClusterContext(cluster);
   const permissionContext =
     permissionMode === "read-write"
       ? "You are in read-write mode. Write kubectl operations may be available through provided tools, but prefer safe, explicit actions and inspect before mutating."
@@ -63,7 +123,7 @@ export const createAiAgentSystemPrompt = (clusterId: ClusterId | undefined, perm
 export const createAiAgentChatContext = (
   request: AiAgentSendRequest,
   rawSettings: AiAgentSettings | undefined,
-  clusterId: ClusterId | undefined,
+  cluster: AiAgentClusterContext | undefined,
   tools?: Tool[],
 ): Context => {
   const settings = normalizeAiAgentSettings(rawSettings);
@@ -71,7 +131,7 @@ export const createAiAgentChatContext = (
   const model = createAiAgentChatModel(settings);
 
   return {
-    systemPrompt: createAiAgentSystemPrompt(clusterId, permissionMode),
+    systemPrompt: createAiAgentSystemPrompt(cluster, permissionMode),
     messages: toAiAgentLlmMessages(request.messages, {
       api: model.api,
       provider: model.provider,

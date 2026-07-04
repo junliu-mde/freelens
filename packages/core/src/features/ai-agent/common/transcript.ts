@@ -78,6 +78,8 @@ export interface AiAgentMessage extends AiAgentConversationMessage {
   id: string;
   runId?: string;
   status: AiAgentRunStatus;
+  /** Transient UI hint while the run is still streaming without visible text. */
+  runStatusHint?: string;
 }
 
 export interface AiAgentAssistantMessageMetadata {

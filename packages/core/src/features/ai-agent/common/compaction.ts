@@ -84,10 +84,11 @@ export const prepareAiAgentCompaction = (
   systemPrompt?: string,
   tools?: Tool[],
   extraText?: string,
+  force = false,
 ): AiAgentCompactionPreparation | undefined => {
   const tokensBefore = estimateAiAgentContextTokens(messages, systemPrompt, tools, extraText);
 
-  if (!shouldCompactAiAgentContext(tokensBefore, contextWindow, settings)) {
+  if (!force && !shouldCompactAiAgentContext(tokensBefore, contextWindow, settings)) {
     return undefined;
   }
 
@@ -116,7 +117,9 @@ export const prepareAiAgentCompaction = (
     // already exceeds the budget (foundRecentBoundary), keep it as-is.
     const lastIndex = messages.length - 1;
 
-    if (!foundRecentBoundary && lastIndex > boundaryStart) {
+    if (force && lastIndex > boundaryStart) {
+      keptStartIndex = lastIndex;
+    } else if (!foundRecentBoundary && lastIndex > boundaryStart) {
       keptStartIndex = lastIndex;
     } else {
       return undefined;

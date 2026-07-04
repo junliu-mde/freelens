@@ -7,6 +7,7 @@ import { withInjectables } from "@ogre-tools/injectable-react";
 import { observer } from "mobx-react";
 import React, { useState } from "react";
 import { normalizeAiAgentSettings } from "../../../../../../features/ai-agent/common/settings";
+import { Gutter } from "../../../../../../renderer/components/gutter";
 import { Input, InputValidators } from "../../../../../../renderer/components/input";
 import { SubTitle } from "../../../../../../renderer/components/layout/sub-title";
 import { Select } from "../../../../../../renderer/components/select";
@@ -70,9 +71,7 @@ const NonInjectedAiAgentPreferences = observer(({ listAiAgentModels, state }: De
 
   return (
     <section id="ai-agent-settings">
-      <SubTitle title="AI Agent" />
-
-      <label>Provider</label>
+      <SubTitle title="Provider" />
       <Select
         id="ai-agent-provider-input"
         options={providerOptions}
@@ -80,16 +79,18 @@ const NonInjectedAiAgentPreferences = observer(({ listAiAgentModels, state }: De
         onChange={(option) => updateSettings({ provider: option?.value ?? "custom-openai-compat" })}
         themeName="lens"
       />
+      <Gutter size="xl" />
 
-      <label>Base URL</label>
+      <SubTitle title="Base URL" />
       <Input
         theme="round-black"
         value={settings.baseUrl}
         onChange={(baseUrl) => updateSettings({ baseUrl })}
         placeholder="https://api.example.com/v1"
       />
+      <Gutter size="xl" />
 
-      <label>API key</label>
+      <SubTitle title="API key" />
       <Input
         theme="round-black"
         type="password"
@@ -97,8 +98,9 @@ const NonInjectedAiAgentPreferences = observer(({ listAiAgentModels, state }: De
         onChange={(apiKey) => updateSettings({ apiKey })}
         placeholder="sk-..."
       />
+      <Gutter size="xl" />
 
-      <label>Model</label>
+      <SubTitle title="Model" />
       <div className="flex gaps align-center">
         <div className="box grow">
           <Select
@@ -114,8 +116,9 @@ const NonInjectedAiAgentPreferences = observer(({ listAiAgentModels, state }: De
         </button>
       </div>
       {modelLoadError ? <div className="hint error">{modelLoadError}</div> : null}
+      <Gutter size="xl" />
 
-      <label>Reasoning effort</label>
+      <SubTitle title="Reasoning effort" />
       <Select
         id="ai-agent-reasoning-effort-input"
         options={reasoningOptions}
@@ -123,16 +126,9 @@ const NonInjectedAiAgentPreferences = observer(({ listAiAgentModels, state }: De
         onChange={(option) => updateSettings({ reasoningEffort: option?.value ?? "medium" })}
         themeName="lens"
       />
+      <Gutter size="xl" />
 
-      <label>Max output tokens</label>
-      <Input
-        theme="round-black"
-        value={String(settings.maxTokens)}
-        validators={InputValidators.isNumber}
-        onChange={(value) => updateSettings({ maxTokens: Number(value) || settings.maxTokens })}
-      />
-
-      <label>Temperature</label>
+      <SubTitle title="Temperature" />
       <Input
         theme="round-black"
         value={settings.temperature === undefined ? "" : String(settings.temperature)}
@@ -144,6 +140,7 @@ const NonInjectedAiAgentPreferences = observer(({ listAiAgentModels, state }: De
         }}
         placeholder="Provider default"
       />
+      <Gutter size="xl" />
 
       <Switch
         checked={settings.enableKubectlTools}
@@ -154,9 +151,9 @@ const NonInjectedAiAgentPreferences = observer(({ listAiAgentModels, state }: De
       <div className="hint">
         The agent can run read-only kubectl commands against the active cluster via Freelens auth proxy.
       </div>
+      <Gutter size="xl" />
 
       <SubTitle title="MCP" />
-
       <Switch
         checked={settings.enableMcpTools}
         onChange={() => updateSettings({ enableMcpTools: !settings.enableMcpTools })}
@@ -164,8 +161,9 @@ const NonInjectedAiAgentPreferences = observer(({ listAiAgentModels, state }: De
         Enable MCP tools from config file
       </Switch>
       <div className="hint">When enabled, Freelens loads MCP servers and makes their tools available in chat.</div>
+      <Gutter size="xl" />
 
-      <label>MCP config path</label>
+      <SubTitle title="MCP config path" />
       <Input
         theme="round-black"
         value={settings.mcpConfigPath}
@@ -181,14 +179,16 @@ const NonInjectedAiAgentPreferences = observer(({ listAiAgentModels, state }: De
         <code>args</code>, <code>env</code>, and <code>cwd</code>. Remote servers can use <code>url</code>, and can also
         set <code>transport</code> or <code>headers</code>.
       </div>
+      <Gutter size="xl" />
 
-      <label>Max tool iterations</label>
+      <SubTitle title="Max tool iterations" />
       <Input
         theme="round-black"
         value={String(settings.maxToolIterations)}
         validators={InputValidators.isNumber}
         onChange={(value) => updateSettings({ maxToolIterations: Number(value) || settings.maxToolIterations })}
       />
+      <Gutter size="xl" />
 
       <Switch
         checked={settings.enableCompaction}
@@ -199,8 +199,9 @@ const NonInjectedAiAgentPreferences = observer(({ listAiAgentModels, state }: De
       <div className="hint">
         When the context gets too large, older turns are summarized and recent turns stay verbatim.
       </div>
+      <Gutter size="xl" />
 
-      <label>Compaction reserve tokens</label>
+      <SubTitle title="Compaction reserve tokens" />
       <Input
         theme="round-black"
         value={String(settings.compactionReserveTokens)}
@@ -210,8 +211,9 @@ const NonInjectedAiAgentPreferences = observer(({ listAiAgentModels, state }: De
         }
         disabled={!settings.enableCompaction}
       />
+      <Gutter size="xl" />
 
-      <label>Recent tokens to keep</label>
+      <SubTitle title="Recent tokens to keep" />
       <Input
         theme="round-black"
         value={String(settings.compactionKeepRecentTokens)}

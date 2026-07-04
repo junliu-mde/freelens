@@ -20,10 +20,12 @@ export interface AiAgentSendRequest {
   messages: AiAgentConversationMessage[];
   permissionMode: AiAgentPermissionMode;
   metadata?: Record<string, unknown>;
+  forceCompact?: boolean;
 }
 
 export type AiAgentStreamEvent =
   | { type: "run-start"; tabId: string; runId: string }
+  | { type: "run-status"; tabId: string; runId: string; status: string }
   | { type: "text-delta"; tabId: string; runId: string; delta: string }
   | { type: "thinking-start"; tabId: string; runId: string }
   | { type: "thinking-delta"; tabId: string; runId: string; delta: string }

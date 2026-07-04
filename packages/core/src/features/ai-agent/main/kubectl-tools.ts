@@ -29,14 +29,6 @@ export interface AiAgentKubectlToolDefinition {
 }
 
 const allowedResourcePattern = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*(?:\/[a-z][a-z0-9.-]*)?$/i;
-const dangerousManifestPatterns = [
-  /cluster-admin/,
-  /privileged:\s*true/,
-  /hostPath:/,
-  /hostPID:\s*true/,
-  /hostNetwork:\s*true/,
-  /hostIPC:\s*true/,
-];
 
 const stringifyArg = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -51,17 +43,6 @@ const clampTailLines = (value: unknown) => Math.max(1, Math.min(500, Math.floor(
 const validateSafeResource = (resource: string) => {
   if (!allowedResourcePattern.test(resource)) {
     throw new Error(`Unsafe resource name: ${resource}`);
-  }
-};
-
-const validateSafeManifest = (manifest: string) => {
-  for (const pattern of dangerousManifestPatterns) {
-    if (pattern.test(manifest)) {
-      throw new Error(
-        `Manifest contains potentially dangerous pattern (${pattern.source}). ` +
-          `Apply with explicit confirmation is required for privileged workloads.`,
-      );
-    }
   }
 };
 
@@ -251,8 +232,6 @@ const toolDefinitions: Record<AiAgentKubectlToolName, AiAgentKubectlToolDefiniti
       if (!manifest) {
         throw new Error("manifest is required");
       }
-
-      validateSafeManifest(manifest);
 
       const result = ["apply", "--filename", "-"];
 

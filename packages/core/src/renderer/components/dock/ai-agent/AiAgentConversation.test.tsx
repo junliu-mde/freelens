@@ -24,6 +24,7 @@ const messages: AiAgentMessageCardViewModel[] = [
     createdAt: 1,
     blocks: [{ type: "text", id: "text-1", text: "hello" }],
     showStreamingPlaceholder: false,
+    streamingPlaceholderText: "",
   },
 ];
 

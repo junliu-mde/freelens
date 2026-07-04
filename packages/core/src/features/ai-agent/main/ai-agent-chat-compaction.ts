@@ -82,7 +82,7 @@ const createCompactionRequestText = (messages: AiAgentConversationMessage[], pre
 };
 
 const getCompactionMaxTokens = (settings: AiAgentSettings) =>
-  Math.max(1024, Math.min(Math.floor(settings.compactionReserveTokens * 0.8), Math.max(settings.maxTokens, 4096)));
+  Math.max(1024, Math.min(Math.floor(settings.compactionReserveTokens * 0.8), 4096));
 
 export const compactAiAgentConversation = async ({
   messages,
@@ -93,6 +93,7 @@ export const compactAiAgentConversation = async ({
   systemPrompt,
   tools,
   extraText,
+  force = false,
 }: {
   messages: AiAgentConversationMessage[];
   settings: AiAgentSettings;
@@ -102,8 +103,17 @@ export const compactAiAgentConversation = async ({
   systemPrompt?: string;
   tools?: Tool[];
   extraText?: string;
+  force?: boolean;
 }): Promise<AiAgentCompactionResult | undefined> => {
-  const preparation = prepareAiAgentCompaction(messages, settings, model.contextWindow, systemPrompt, tools, extraText);
+  const preparation = prepareAiAgentCompaction(
+    messages,
+    settings,
+    model.contextWindow,
+    systemPrompt,
+    tools,
+    extraText,
+    force,
+  );
 
   if (!preparation || preparation.messagesToSummarize.length === 0) {
     return undefined;
