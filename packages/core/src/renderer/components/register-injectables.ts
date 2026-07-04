@@ -73,10 +73,13 @@ import { registerInjectables as registerWorkloadsCronjobsInjectables } from "./w
 import { registerInjectables as registerWorkloadsDaemonsetsInjectables } from "./workloads-daemonsets/register-injectables";
 import { registerInjectables as registerWorkloadsDeploymentsInjectables } from "./workloads-deployments/register-injectables";
 import { registerInjectables as registerWorkloadsJobsInjectables } from "./workloads-jobs/register-injectables";
+import { registerInjectables as registerWorkloadsLeaderworkersetInjectables } from "./workloads-leaderworkerset/register-injectables";
 import { registerInjectables as registerWorkloadsOverviewInjectables } from "./workloads-overview/register-injectables";
 import { registerInjectables as registerWorkloadsPodsInjectables } from "./workloads-pods/register-injectables";
 import { registerInjectables as registerWorkloadsReplicasetsInjectables } from "./workloads-replicasets/register-injectables";
 import { registerInjectables as registerWorkloadsReplicationControllersInjectables } from "./workloads-replication-controllers/register-injectables";
+import { registerInjectables as registerWorkloadsRolebasedgroupsInjectables } from "./workloads-rolebasedgroups/register-injectables";
+import { registerInjectables as registerWorkloadsRoleinstancesInjectables } from "./workloads-roleinstances/register-injectables";
 import { registerInjectables as registerWorkloadsStatefulsetsInjectables } from "./workloads-statefulsets/register-injectables";
 
 import type { DiContainerForInjection } from "@ogre-tools/injectable";
@@ -418,6 +421,11 @@ export function registerInjectables(di: DiContainerForInjection): void {
     /* Ignore duplicate registration */
   }
   try {
+    registerWorkloadsLeaderworkersetInjectables(di);
+  } catch (e) {
+    /* Ignore duplicate registration */
+  }
+  try {
     registerWorkloadsOverviewInjectables(di);
   } catch (e) {
     /* Ignore duplicate registration */
@@ -434,6 +442,16 @@ export function registerInjectables(di: DiContainerForInjection): void {
   }
   try {
     registerWorkloadsReplicationControllersInjectables(di);
+  } catch (e) {
+    /* Ignore duplicate registration */
+  }
+  try {
+    registerWorkloadsRolebasedgroupsInjectables(di);
+  } catch (e) {
+    /* Ignore duplicate registration */
+  }
+  try {
+    registerWorkloadsRoleinstancesInjectables(di);
   } catch (e) {
     /* Ignore duplicate registration */
   }
