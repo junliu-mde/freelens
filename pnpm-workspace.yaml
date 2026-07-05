@@ -1,3 +1,7 @@
+
+packages:
+  - freelens
+  - packages/**
 allowBuilds:
   '@parcel/watcher': true
   electron: true
@@ -5,7 +9,7 @@ allowBuilds:
   node-pty: true
   sharp: true
 
-engineStrict: true
+engineStrict: false
 
 nodeGyp: ../../../../node-gyp/bin/node-gyp.js
 
@@ -17,10 +21,6 @@ overrides:
   http-proxy: npm:http-proxy-node16@^1.0.6
   http-proxy-middleware: ^3.0.7
   tmp@^0.2.0: ^0.2.7
-
-packages:
-  - freelens
-  - packages/**
 
 patchedDependencies:
   '@async-fn/jest': patches/@async-fn__jest.patch
