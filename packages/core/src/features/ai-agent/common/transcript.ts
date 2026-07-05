@@ -247,7 +247,7 @@ const toAssistantMessages = (
         // Only forward tool calls that have a matching tool result. An orphan tool call
         // (e.g. the run was aborted mid-tool) would produce an assistant message carrying
         // tool_calls with no following tool messages, which OpenAI-compatible endpoints reject.
-        if (part.done && resolvedToolCallIds.has(part.toolCallId)) {
+        if (resolvedToolCallIds.has(part.toolCallId)) {
           const toolCall: ToolCall = {
             type: "toolCall",
             id: part.toolCallId,
